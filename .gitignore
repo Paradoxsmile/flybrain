@@ -1,0 +1,17 @@
+# data (never commit raw or processed data)
+data/raw/
+data/processed/
+# model checkpoints
+checkpoints/
+*.pt
+*.pth
+# results (keep the folder, ignore run outputs)
+results/*
+!results/.gitkeep
+# python
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/

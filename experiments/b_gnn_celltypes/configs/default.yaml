@@ -1,0 +1,9 @@
+seed: 0
+label_col: super_class   # or cell_type
+hidden_dim: 64
+num_layers: 2
+dropout: 0.3
+lr: 0.01
+weight_decay: 0.0005
+epochs: 100
+run_name: null           # default: gnn_<timestamp>
