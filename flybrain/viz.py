@@ -13,6 +13,7 @@ def _finish(fig: plt.Figure, path: str | Path | None) -> plt.Figure:
     fig.tight_layout()
     if path is not None:
         fig.savefig(path, dpi=150)
+    plt.close(fig)  # notebooks show the returned figure once; scripts do not leak figures
     return fig
 
 
