@@ -1,17 +1,18 @@
 # Data
 
-Raw data is never committed (`data/raw/` and `data/processed/` are git-ignored), and this repo does not download anything. Obtain the FlyWire (FAFB) tables yourself, for example from FlyWire Codex, and place them in `data/raw/`.
+Raw data is never committed (the contents of `data/raw/` and `data/processed/` are git-ignored), and this repo does not download anything. Download the FlyWire (FAFB) tables yourself from FlyWire Codex (release **v783**) and place them in `data/raw/` with their original filenames.
 
 ## Expected files (`data/raw/`)
 
-Extensions may be `.parquet`, `.feather`, `.csv` or `.csv.gz`.
+| Codex file (v783) | One row per | Used columns | Required |
+|---|---|---|---|
+| `classification.csv.gz` | neuron | `root_id`, `super_class` (also `flow`, `class`, `sub_class`, `hemilineage`, `side`, `nerve`) | yes |
+| `connections_princeton.csv.gz` | (pre, post, neuropil) | `pre_root_id`, `post_root_id`, `syn_count` (also `neuropil`, `nt_type`) | yes |
+| `consolidated_cell_types.csv.gz` | typed neuron | `root_id`, `primary_type` | optional |
 
-| File stem | One row per | Required columns |
-|---|---|---|
-| `classification` | neuron | `root_id`; labels `super_class` and/or `cell_type` |
-| `connections` | (pre, post[, neuropil]) pair | `pre_root_id`, `post_root_id`, `syn_count` |
+`classification` has no `cell_type` column; if `consolidated_cell_types` is present, its `primary_type` is left-merged on `root_id` as `cell_type` (untyped neurons get no label). Without it only `super_class` labels are available.
 
-These filenames and column names are assumptions about the Codex exports. If yours differ, rename the files or edit the constants at the top of `flybrain/loading.py` (`NEURONS_STEM`, `CONNECTIONS_STEM`, `*_COL`).
+Extensions may also be `.parquet`, `.feather` or `.csv`, and `connections.*` is accepted instead of `connections_princeton.*`. If your exports differ, edit the constants at the top of `flybrain/loading.py` (`NEURONS_STEM`, `CONNECTIONS_STEM`, `CELL_TYPES_STEM`, `*_COL`).
 
 Check your files:
 

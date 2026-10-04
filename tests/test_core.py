@@ -96,3 +96,19 @@ def test_sage_forward_and_seeding(data):
     out = run()
     assert out.shape == (data.num_nodes, 4)
     assert torch.allclose(out, run())
+
+
+def test_codex_filenames_and_cell_type_merge(tables, tmp_path):
+    raw, proc = tmp_path / "raw", tmp_path / "proc"
+    raw.mkdir()
+    neurons = tables[0].drop(columns="cell_type", errors="ignore")
+    neurons.to_csv(raw / "classification.csv.gz", index=False)
+    tables[1].to_csv(raw / "connections_princeton.csv.gz", index=False)
+    ids = neurons.root_id.tolist()
+    types = pd.DataFrame({"root_id": ids[:2], "primary_type": ["T4a", "Mi1"]})
+    types.to_csv(raw / "consolidated_cell_types.csv.gz", index=False)
+    n, c = load_tables(raw, proc)
+    assert len(n) == len(neurons) and len(c) > 0
+    by_id = n.set_index("root_id").cell_type
+    assert by_id[ids[0]] == "T4a" and by_id[ids[1]] == "Mi1"
+    assert by_id[ids[2:]].isna().all()

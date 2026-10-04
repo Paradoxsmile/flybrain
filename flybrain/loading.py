@@ -1,7 +1,7 @@
 """Raw tables -> cleaned Parquet cache -> PyG Data object.
 
 Raw files are placed manually in data/raw/ (see data/README.md). Filename stems and column
-names below are assumptions about the FlyWire/Codex exports: adjust them here if yours differ.
+names below match the FlyWire Codex FAFB v783 exports: adjust them here if yours differ.
 """
 
 from __future__ import annotations
@@ -19,23 +19,27 @@ from flybrain.utils import REPO_ROOT
 RAW_DIR = REPO_ROOT / "data" / "raw"
 PROCESSED_DIR = REPO_ROOT / "data" / "processed"
 
-NEURONS_STEM = "classification"  # one row per neuron
-CONNECTIONS_STEM = "connections"  # one row per (pre, post[, neuropil]) pair
+# Stems are tried in order; the Codex original names work unchanged.
+NEURONS_STEM = ("classification",)  # one row per neuron
+CONNECTIONS_STEM = ("connections", "connections_princeton")  # one row per (pre, post, neuropil)
+CELL_TYPES_STEM = ("consolidated_cell_types",)  # optional, one row per typed neuron
 EXTENSIONS = (".parquet", ".feather", ".csv", ".csv.gz")
 
 ID_COL = "root_id"
 PRE_COL = "pre_root_id"
 POST_COL = "post_root_id"
 WEIGHT_COL = "syn_count"
+CELL_TYPE_SRC_COL = "primary_type"  # column in the cell-types table, merged in as "cell_type"
 LABEL_COLS = ("super_class", "cell_type")
 
 
-def find_raw_file(raw_dir: Path, stem: str) -> Path | None:
-    """Return the first existing raw file for a stem, trying known extensions."""
-    for ext in EXTENSIONS:
-        path = raw_dir / f"{stem}{ext}"
-        if path.exists():
-            return path
+def find_raw_file(raw_dir: Path, stems: str | tuple[str, ...]) -> Path | None:
+    """Return the first existing raw file for the given stem(s), trying known extensions."""
+    for stem in (stems,) if isinstance(stems, str) else stems:
+        for ext in EXTENSIONS:
+            path = raw_dir / f"{stem}{ext}"
+            if path.exists():
+                return path
     return None
 
 
@@ -66,6 +70,18 @@ def clean_tables(
     return neurons, connections
 
 
+def merge_cell_types(neurons: pd.DataFrame, raw_dir: Path) -> pd.DataFrame:
+    """Attach `cell_type` from the optional cell-types table if the neurons table lacks it."""
+    if "cell_type" in neurons.columns:
+        return neurons
+    path = find_raw_file(raw_dir, CELL_TYPES_STEM)
+    if path is None:
+        return neurons
+    types = read_table(path)[[ID_COL, CELL_TYPE_SRC_COL]].drop_duplicates(ID_COL)
+    types = types.rename(columns={CELL_TYPE_SRC_COL: "cell_type"})
+    return neurons.merge(types, on=ID_COL, how="left")
+
+
 def load_tables(
     raw_dir: Path = RAW_DIR, processed_dir: Path = PROCESSED_DIR
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -78,10 +94,11 @@ def load_tables(
     c_raw = find_raw_file(raw_dir, CONNECTIONS_STEM)
     if n_raw is None or c_raw is None:
         raise FileNotFoundError(
-            f"Expected '{NEURONS_STEM}.*' and '{CONNECTIONS_STEM}.*' in {raw_dir}. "
-            "See data/README.md or run data/download_fafb.py to check."
+            f"Expected one of {NEURONS_STEM} and one of {CONNECTIONS_STEM} (any of "
+            f"{EXTENSIONS}) in {raw_dir}. See data/README.md or run data/download_fafb.py."
         )
-    neurons, connections = clean_tables(read_table(n_raw), read_table(c_raw))
+    neurons = merge_cell_types(read_table(n_raw), raw_dir)
+    neurons, connections = clean_tables(neurons, read_table(c_raw))
     processed_dir.mkdir(parents=True, exist_ok=True)
     neurons.to_parquet(n_cache, index=False)
     connections.to_parquet(c_cache, index=False)
