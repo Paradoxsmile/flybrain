@@ -33,6 +33,16 @@ def test_graph_shapes(data):
     assert int(data.edge_index.max()) < data.num_nodes
 
 
+def test_min_class_size_unlabels_small_classes(tables):
+    neurons, conns = tables
+    neurons = neurons.copy()
+    neurons.loc[:1, "super_class"] = "rare"  # a class with only two neurons
+    data = build_graph(neurons, conns, min_class_size=3)
+    assert "rare" not in data.label_names
+    assert (data.y[:2] == -1).all()
+    assert len(data.label_names) == 3
+
+
 def test_degree_features_simple():
     ei = torch.tensor([[0, 0, 1], [1, 2, 2]])
     feats = degree_features(3, ei, torch.tensor([2.0, 3.0, 5.0]))

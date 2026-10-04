@@ -63,7 +63,12 @@ def main() -> None:
     set_seed(cfg["seed"])
     device = get_device()
 
-    data = load_graph(cfg["label_col"], synthetic=args.synthetic, seed=cfg["seed"])
+    data = load_graph(
+        cfg["label_col"],
+        synthetic=args.synthetic,
+        seed=cfg["seed"],
+        min_class_size=cfg.get("min_class_size", 1),
+    )
     train, val, test = stratified_split(data.y, seed=cfg["seed"])
     mean, std = data.x[train].mean(0), data.x[train].std(0).clamp(min=1e-6)
     data.x = (data.x - mean) / std

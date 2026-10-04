@@ -1,5 +1,6 @@
 seed: 0
 label_col: super_class   # or cell_type
+min_class_size: 1        # classes with fewer neurons are unlabeled (e.g. 20 for cell_type)
 hidden_dim: 64
 num_layers: 2
 dropout: 0.3

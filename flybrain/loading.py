@@ -106,9 +106,14 @@ def load_tables(
 
 
 def build_graph(
-    neurons: pd.DataFrame, connections: pd.DataFrame, label_col: str = "super_class"
+    neurons: pd.DataFrame,
+    connections: pd.DataFrame,
+    label_col: str = "super_class",
+    min_class_size: int = 1,
 ) -> Data:
     """Build a PyG Data object. y is the integer label (-1 if unlabeled).
+
+    Classes with fewer than `min_class_size` neurons are treated as unlabeled.
 
     Attributes: x (degree features), edge_index, edge_weight, y, node_ids, label_names.
     """
@@ -119,7 +124,10 @@ def build_graph(
     edge_index = torch.from_numpy(np.stack([src, dst])).long()
     edge_weight = torch.tensor(connections[WEIGHT_COL].to_numpy(), dtype=torch.float)
 
-    codes, names = pd.factorize(neurons[label_col].astype("string"))  # NA -> -1
+    labels = neurons[label_col].astype("string")
+    counts = labels.value_counts()
+    labels = labels.where(labels.map(counts) >= min_class_size)
+    codes, names = pd.factorize(labels)  # NA -> -1
     x = torch.from_numpy(degree_features(len(neurons), edge_index, edge_weight)).float()
     data = Data(
         x=x,
@@ -139,11 +147,12 @@ def load_graph(
     processed_dir: Path = PROCESSED_DIR,
     synthetic: bool = False,
     seed: int = 0,
+    min_class_size: int = 1,
 ) -> Data:
     """Load the real graph (raw -> Parquet cache -> Data), or a synthetic one if requested."""
     if synthetic:
         from flybrain.synthetic import make_synthetic_tables
 
-        return build_graph(*make_synthetic_tables(seed=seed), label_col)
+        return build_graph(*make_synthetic_tables(seed=seed), label_col, min_class_size)
     neurons, connections = load_tables(raw_dir, processed_dir)
-    return build_graph(neurons, connections, label_col)
+    return build_graph(neurons, connections, label_col, min_class_size)

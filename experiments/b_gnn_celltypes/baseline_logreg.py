@@ -20,12 +20,18 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--synthetic", action="store_true", help="use the synthetic test graph")
     p.add_argument("--label-col", default="super_class", choices=["super_class", "cell_type"])
+    p.add_argument("--min-class-size", type=int, default=1, help="smaller classes are unlabeled")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--run-name", default=None)
     args = p.parse_args()
 
     set_seed(args.seed)
-    data = load_graph(args.label_col, synthetic=args.synthetic, seed=args.seed)
+    data = load_graph(
+        args.label_col,
+        synthetic=args.synthetic,
+        seed=args.seed,
+        min_class_size=args.min_class_size,
+    )
     train, val, test = stratified_split(data.y, seed=args.seed)
     x, y = data.x.numpy(), data.y.numpy()
 
