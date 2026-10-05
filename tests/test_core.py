@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import pytest
 import torch
 from torch_geometric.nn import SAGEConv
 
-from flybrain.features import FEATURE_NAMES, degree_features
+from flybrain.features import FEATURE_NAMES, degree_features, normalize_features
 from flybrain.loading import build_graph, clean_tables, load_tables
 from flybrain.models import DirectedSAGELayer, SparseMean, class_weights, mean_adjacency
 from flybrain.splits import hemisphere_split, make_split, stratified_split
@@ -186,3 +187,28 @@ def test_hemisphere_split_needs_side(data):
     with pytest.raises(ValueError, match="side"):
         make_split(no_side, "left_right")
     assert stratified_split(data.y, test_frac=0.0)[2].sum() == 0
+
+
+def test_normalize_features_modes():
+    g = torch.Generator().manual_seed(0)
+    x = torch.rand(200, 3, generator=g)
+    side = np.array(["left"] * 100 + ["right"] * 100)
+    denser = x.clone()
+    denser[100:] = denser[100:] * 2 + 1  # right side: same order, different scale
+
+    glob = normalize_features(x, "global")
+    assert torch.allclose(glob.mean(0), torch.zeros(3), atol=1e-5)
+
+    per_side = normalize_features(denser, "per_side", groups=side)
+    assert torch.allclose(per_side, normalize_features(x, "per_side", groups=side), atol=1e-5)
+    assert torch.allclose(per_side[100:].mean(0), torch.zeros(3), atol=1e-5)
+
+    # ranks ignore any monotone change within a side, e.g. log of the denser side
+    warped = denser.clone()
+    warped[100:] = torch.log(warped[100:])
+    ranked = normalize_features(warped, "rank_per_side", groups=side)
+    assert torch.allclose(ranked, normalize_features(x, "rank_per_side", groups=side))
+    assert torch.isfinite(ranked).all()
+
+    with pytest.raises(ValueError, match="groups"):
+        normalize_features(x, "per_side")

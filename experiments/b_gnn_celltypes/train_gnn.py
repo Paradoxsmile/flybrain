@@ -19,6 +19,7 @@ from sklearn.metrics import f1_score
 from torch import nn
 from torch_geometric.data import Data
 
+from flybrain.features import normalize_features
 from flybrain.loading import load_graph
 from flybrain.models import DirectedSAGE, SparseMean, class_weights, mean_adjacency
 from flybrain.splits import make_split
@@ -73,8 +74,9 @@ def main() -> None:
         min_class_size=cfg.get("min_class_size", 1),
     )
     train, val, test = make_split(data, cfg.get("split", "random"), seed=cfg["seed"])
-    mean, std = data.x[train].mean(0), data.x[train].std(0).clamp(min=1e-6)
-    data.x = (data.x - mean) / std
+    data.x = normalize_features(
+        data.x, cfg.get("feature_norm", "global"), train, getattr(data, "side", None)
+    )
     data = data.to(device)
     train, val, test = train.to(device), val.to(device), test.to(device)
 

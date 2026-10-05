@@ -51,6 +51,13 @@ def main() -> None:
     p.add_argument(
         "--only", nargs="+", default=None, metavar="COMBO", help="run only these combos (by name)"
     )
+    p.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="extra config override passed to every run (repeatable)",
+    )
     p.add_argument("--sweep-name", default=None, help="default: ablation_<label-col>[_<split>]")
     args = p.parse_args()
 
@@ -85,6 +92,8 @@ def main() -> None:
             cmd += ["--synthetic"] if args.synthetic else []
             for key, value in overrides.items():
                 cmd += ["--set", f"{key}={str(value).lower()}"]
+            for item in args.set:
+                cmd += ["--set", item]
             start = time.time()
             subprocess.run(cmd, check=True, cwd=REPO_ROOT, stdout=subprocess.DEVNULL)
             print(
