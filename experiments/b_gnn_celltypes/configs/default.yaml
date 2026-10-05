@@ -1,10 +1,13 @@
 seed: 0
 label_col: super_class   # or cell_type
 min_class_size: 1        # classes with fewer neurons are unlabeled (e.g. 20 for cell_type)
+bidirectional: true      # also aggregate over postsynaptic partners (false = plain GraphSAGE)
+edge_weight: count       # neighbor mean weighted by: none | count (synapses) | log (log1p synapses)
+class_weight: balanced   # loss weights against class imbalance: none | balanced | sqrt
 hidden_dim: 64
 num_layers: 2
 dropout: 0.3
 lr: 0.01
 weight_decay: 0.0005
-epochs: 100
+epochs: 300
 run_name: null           # default: gnn_<timestamp>
