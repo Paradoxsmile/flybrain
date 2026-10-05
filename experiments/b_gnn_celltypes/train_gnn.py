@@ -43,6 +43,13 @@ def main() -> None:
     p.add_argument("--synthetic", action="store_true", help="use the synthetic test graph")
     p.add_argument("--epochs", type=int, default=None, help="override config epochs")
     p.add_argument("--run-name", default=None, help="override config run_name")
+    p.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="override a config value, e.g. --set bidirectional=false --set seed=1 (repeatable)",
+    )
     args = p.parse_args()
 
     cfg = yaml.safe_load(args.config.read_text())
@@ -50,6 +57,11 @@ def main() -> None:
         cfg["epochs"] = args.epochs
     if args.run_name is not None:
         cfg["run_name"] = args.run_name
+    for item in args.set:
+        key, sep, value = item.partition("=")
+        if not sep or key not in cfg:
+            p.error(f"--set expects KEY=VALUE with a key from {args.config.name}, got {item!r}")
+        cfg[key] = yaml.safe_load(value)
     cfg["synthetic"] = args.synthetic
     set_seed(cfg["seed"])
     device = get_device()
