@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,6 +46,10 @@ def test_gnn_synthetic_runs():
     metrics = json.loads((run_dir / "metrics.json").read_text())
     assert metrics["test_acc"] > 0.3
     assert (run_dir / "curves.png").exists()
+    preds = pd.read_parquet(run_dir / "predictions.parquet")
+    test = preds[preds.split == "test"]
+    assert len(test) == metrics["n_test"]
+    assert (test.label == test.pred).mean() == pytest.approx(metrics["test_acc"], abs=1e-6)
 
 
 def test_gnn_set_overrides_config():

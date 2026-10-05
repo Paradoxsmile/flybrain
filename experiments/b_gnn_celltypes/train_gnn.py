@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
@@ -36,6 +37,28 @@ def evaluate(model: nn.Module, data: Data, adj: tuple, mask: torch.Tensor) -> tu
     pred = model(data.x, *adj).argmax(1)[mask].cpu()
     true = data.y[mask].cpu()
     return float((pred == true).float().mean()), float(f1_score(true, pred, average="macro"))
+
+
+@torch.no_grad()
+def save_predictions(model: nn.Module, data: Data, adj: tuple, masks: tuple, path: Path) -> None:
+    """Write one row per neuron: root_id, side, true and predicted label, split."""
+    model.eval()
+    pred = model(data.x, *adj).argmax(1).cpu().numpy()
+    names = np.array(data.label_names + [None], dtype=object)  # y = -1 -> None
+    split = np.full(data.num_nodes, "", dtype=object)
+    for name, mask in zip(("train", "val", "test"), masks, strict=True):
+        split[mask.cpu().numpy()] = name
+    df = pd.DataFrame(
+        {
+            "root_id": data.node_ids.numpy(),
+            "label": names[data.y.cpu().numpy()],
+            "pred": names[pred],
+            "split": split,
+        }
+    )
+    if getattr(data, "side", None) is not None:
+        df.insert(1, "side", data.side)
+    df.to_parquet(path, index=False)
 
 
 def main() -> None:
@@ -132,6 +155,7 @@ def main() -> None:
     hist = pd.DataFrame(history)
     hist.to_csv(run_dir / "history.csv", index=False)
     plot_training_curves(hist, run_dir / "curves.png")
+    save_predictions(model, data, adj, (train, val, test), run_dir / "predictions.parquet")
     print(f"[gnn] {metrics}\nresults -> {run_dir}")
 
 
