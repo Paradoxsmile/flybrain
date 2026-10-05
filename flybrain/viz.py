@@ -4,18 +4,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 
 
 def _finish(fig: plt.Figure, path: str | Path | None) -> plt.Figure:
     fig.tight_layout()
     if path is not None:
         fig.savefig(path, dpi=150)
+    plt.close(fig)  # notebooks show the returned figure once; scripts do not leak figures
     return fig
 
 
@@ -48,12 +46,15 @@ def plot_degree_distribution(
 
 
 def plot_training_curves(history: pd.DataFrame, path: str | Path | None = None) -> plt.Figure:
-    """Plot loss and val accuracy per epoch from a history frame (epoch, loss, val_acc)."""
+    """Plot loss and val accuracy (+ macro-F1 if logged) per epoch from a history frame."""
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(9, 3.5))
     a1.plot(history["epoch"], history["loss"])
     a1.set_xlabel("epoch")
     a1.set_ylabel("train loss")
-    a2.plot(history["epoch"], history["val_acc"])
+    a2.plot(history["epoch"], history["val_acc"], label="accuracy")
+    if "val_macro_f1" in history:
+        a2.plot(history["epoch"], history["val_macro_f1"], label="macro-F1")
+        a2.legend()
     a2.set_xlabel("epoch")
-    a2.set_ylabel("val accuracy")
+    a2.set_ylabel("validation")
     return _finish(fig, path)

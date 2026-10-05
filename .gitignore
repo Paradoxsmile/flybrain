@@ -1,5 +1,6 @@
 # data (never commit raw or processed data)
-data/raw/
+data/raw/*
+!data/raw/.gitkeep
 data/processed/
 # model checkpoints
 checkpoints/

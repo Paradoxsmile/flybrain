@@ -18,7 +18,11 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest", "ruff"]
+dev = [
+    "ipykernel>=7.4.0",
+    "pytest",
+    "ruff",
+]
 
 [build-system]
 requires = ["hatchling"]
