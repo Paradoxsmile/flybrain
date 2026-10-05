@@ -6,7 +6,8 @@ can simply be restarted. Writes results/<sweep>/runs.csv (one row per run) and s
 (mean and std over seeds). The seed also changes the train/val/test split.
 
 Usage: python experiments/b_gnn_celltypes/ablation.py [--label-col cell_type --min-class-size 20]
-       [--seeds 0 1 2] [--epochs N] [--synthetic]
+       [--seeds 0 1 2] [--split left_right] [--only bidir-true_ew-count_cw-none ...] [--epochs N]
+       [--synthetic]
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from flybrain.splits import SPLITS
 from flybrain.utils import REPO_ROOT
 
 TRAIN_SCRIPT = Path(__file__).parent / "train_gnn.py"
@@ -30,7 +32,7 @@ OPTIONS = {
     "class_weight": ("none", "balanced"),
 }
 SHORT = {"bidirectional": "bidir", "edge_weight": "ew", "class_weight": "cw"}
-METRICS = ["test_acc", "test_macro_f1", "val_acc", "val_macro_f1", "best_epoch"]
+METRICS = ["test_acc", "test_macro_f1", "val_acc", "val_macro_f1", "best_epoch", "n_test"]
 
 
 def combo_name(combo: dict) -> str:
@@ -45,14 +47,24 @@ def main() -> None:
     p.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
     p.add_argument("--epochs", type=int, default=None, help="override config epochs")
     p.add_argument("--synthetic", action="store_true", help="use the synthetic test graph")
-    p.add_argument("--sweep-name", default=None, help="default: ablation_<label-col>")
+    p.add_argument("--split", default="random", choices=SPLITS)
+    p.add_argument(
+        "--only", nargs="+", default=None, metavar="COMBO", help="run only these combos (by name)"
+    )
+    p.add_argument("--sweep-name", default=None, help="default: ablation_<label-col>[_<split>]")
     args = p.parse_args()
 
-    sweep = args.sweep_name or f"ablation_{args.label_col}"
+    suffix = "" if args.split == "random" else f"_{args.split}"
+    sweep = args.sweep_name or f"ablation_{args.label_col}{suffix}"
     sweep_dir = REPO_ROOT / "results" / sweep
     combos = [
         dict(zip(OPTIONS, values, strict=True)) for values in itertools.product(*OPTIONS.values())
     ]
+    if args.only:
+        unknown = set(args.only) - {combo_name(c) for c in combos}
+        if unknown:
+            p.error(f"unknown combos {sorted(unknown)}; names look like {combo_name(combos[0])}")
+        combos = [c for c in combos if combo_name(c) in args.only]
     jobs = [(combo, seed) for combo in combos for seed in args.seeds]
 
     rows = []
@@ -65,6 +77,7 @@ def main() -> None:
                 "seed": seed,
                 "label_col": args.label_col,
                 "min_class_size": args.min_class_size,
+                "split": args.split,
             }
             if args.epochs is not None:
                 overrides["epochs"] = args.epochs
@@ -79,7 +92,7 @@ def main() -> None:
                 flush=True,
             )
         metrics = json.loads(metrics_file.read_text())
-        rows.append({**combo, "seed": seed, **{m: metrics[m] for m in METRICS}})
+        rows.append({**combo, "seed": seed, **{m: metrics.get(m) for m in METRICS}})
 
     runs = pd.DataFrame(rows)
     runs.to_csv(sweep_dir / "runs.csv", index=False)

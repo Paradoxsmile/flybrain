@@ -10,7 +10,7 @@ from torch_geometric.nn import SAGEConv
 from flybrain.features import FEATURE_NAMES, degree_features
 from flybrain.loading import build_graph, clean_tables, load_tables
 from flybrain.models import DirectedSAGELayer, SparseMean, class_weights, mean_adjacency
-from flybrain.splits import stratified_split
+from flybrain.splits import hemisphere_split, make_split, stratified_split
 from flybrain.synthetic import make_synthetic_tables
 from flybrain.utils import set_seed
 
@@ -167,3 +167,22 @@ def test_class_weights_balanced():
     w = class_weights(torch.tensor([0, 0, 0, 1]), 2)
     assert torch.allclose(w, torch.tensor([4 / 6, 2.0]))
     assert class_weights(torch.tensor([0, 1]), 2, "none") is None
+
+
+def test_hemisphere_split(data):
+    side = data.side
+    train, val, test = hemisphere_split(data.y, side, "left", seed=0)
+    assert (side[train.numpy()] == "left").all() and (side[val.numpy()] == "left").all()
+    assert (side[test.numpy()] == "right").all()
+    assert not (train & val).any() and val.any() and test.any()
+    assert set(data.y[test].tolist()) <= set(data.y[train].tolist())
+    flipped = make_split(data, "right_left", seed=0)
+    assert (side[flipped[2].numpy()] == "left").all()
+
+
+def test_hemisphere_split_needs_side(data):
+    no_side = data.clone()
+    del no_side.side
+    with pytest.raises(ValueError, match="side"):
+        make_split(no_side, "left_right")
+    assert stratified_split(data.y, test_frac=0.0)[2].sum() == 0

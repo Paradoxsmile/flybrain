@@ -21,7 +21,7 @@ from torch_geometric.data import Data
 
 from flybrain.loading import load_graph
 from flybrain.models import DirectedSAGE, SparseMean, class_weights, mean_adjacency
-from flybrain.splits import stratified_split
+from flybrain.splits import make_split
 from flybrain.utils import get_device, log_run, make_run_dir, set_seed
 from flybrain.viz import plot_training_curves
 
@@ -72,7 +72,7 @@ def main() -> None:
         seed=cfg["seed"],
         min_class_size=cfg.get("min_class_size", 1),
     )
-    train, val, test = stratified_split(data.y, seed=cfg["seed"])
+    train, val, test = make_split(data, cfg.get("split", "random"), seed=cfg["seed"])
     mean, std = data.x[train].mean(0), data.x[train].std(0).clamp(min=1e-6)
     data.x = (data.x - mean) / std
     data = data.to(device)
@@ -118,6 +118,8 @@ def main() -> None:
 
     model.load_state_dict(best_state)
     metrics: dict[str, float | int] = {"num_nodes": int(data.num_nodes), "device": str(device)}
+    for name, mask in (("train", train), ("val", val), ("test", test)):
+        metrics[f"n_{name}"] = int(mask.sum())
     metrics["best_epoch"] = int(max(history, key=lambda h: h["val_macro_f1"])["epoch"])
     for name, mask in (("train", train), ("val", val), ("test", test)):
         acc, f1 = evaluate(model, data, adj, mask)
