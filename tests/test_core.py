@@ -212,3 +212,35 @@ def test_normalize_features_modes():
 
     with pytest.raises(ValueError, match="groups"):
         normalize_features(x, "per_side")
+
+
+def test_mean_builder_matches_mean_adjacency(data):
+    from flybrain.models import MeanBuilder, drop_edges
+
+    x = torch.randn(data.num_nodes, 5)
+    ei, n, w = data.edge_index, data.num_nodes, data.edge_weight
+    builder = MeanBuilder(ei, n, w, "count")
+    mean_in, mean_out = builder(bidirectional=True)
+    expected_out = SparseMean(mean_adjacency(ei, n, w, "count", reverse=True))
+    assert torch.allclose(mean_in(x), SparseMean(mean_adjacency(ei, n, w, "count"))(x), atol=1e-5)
+    assert torch.allclose(mean_out(x), expected_out(x), atol=1e-5)
+
+    keep = drop_edges(ei, n, 0.5, torch.Generator().manual_seed(0))
+    assert 0.6 < keep.float().mean() < 0.9  # mean drop rate is max_rate / 2
+    sub_in, _ = builder(bidirectional=False, keep=keep)
+    expected = SparseMean(mean_adjacency(ei[:, keep], n, w[keep], "count"))
+    assert torch.allclose(sub_in(x), expected(x), atol=1e-5)
+    # gradient through the subgraph mean uses the subgraph transpose
+    xg = x.clone().requires_grad_(True)
+    sub_in(xg).pow(2).sum().backward()
+    dense = mean_adjacency(ei[:, keep], n, w[keep], "count").to_dense()
+    xd = x.clone().requires_grad_(True)
+    (dense @ xd).pow(2).sum().backward()
+    assert torch.allclose(xg.grad, xd.grad, atol=1e-5)
+
+
+def test_normalize_features_reference():
+    x = torch.rand(50, 3)
+    ref = x * 2
+    out = normalize_features(x, "global", reference=ref)
+    assert torch.allclose(out, (x - ref.mean(0)) / ref.std(0))

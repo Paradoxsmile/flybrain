@@ -11,6 +11,18 @@ from torch import nn
 EDGE_WEIGHTINGS = ("none", "count", "log")
 
 
+def _edge_values(
+    edge_index: torch.Tensor, edge_weight: torch.Tensor | None, weighting: str
+) -> torch.Tensor:
+    """Per-edge weight before normalization: 1, the synapse count, or log1p of it."""
+    if weighting not in EDGE_WEIGHTINGS:
+        raise ValueError(f"weighting must be one of {EDGE_WEIGHTINGS}, got {weighting!r}")
+    if weighting == "none" or edge_weight is None:
+        return torch.ones(edge_index.size(1), device=edge_index.device)
+    w = edge_weight.float()
+    return torch.log1p(w) if weighting == "log" else w
+
+
 def mean_adjacency(
     edge_index: torch.Tensor,
     num_nodes: int,
@@ -25,15 +37,8 @@ def mean_adjacency(
     weighting: "none" (plain mean), "count" (synapse counts), "log" (log1p of synapse counts).
     Rows of nodes without such neighbors are zero.
     """
-    if weighting not in EDGE_WEIGHTINGS:
-        raise ValueError(f"weighting must be one of {EDGE_WEIGHTINGS}, got {weighting!r}")
     src, dst = edge_index
-    if weighting == "none" or edge_weight is None:
-        w = torch.ones(src.numel(), device=edge_index.device)
-    else:
-        w = edge_weight.float()
-        if weighting == "log":
-            w = torch.log1p(w)
+    w = _edge_values(edge_index, edge_weight, weighting)
     rows, cols = (src, dst) if reverse else (dst, src)
     total = torch.zeros(num_nodes, device=w.device).index_add_(0, rows, w)
     w = w / total[rows]
@@ -62,13 +67,79 @@ class SparseMean:
     Stores A and A^T in CSR format: ~10x faster than torch.sparse.mm on COO, forward and backward.
     """
 
-    def __init__(self, adj: torch.Tensor):
-        adj = adj.coalesce()
-        self.a = adj.to_sparse_csr()
-        self.a_t = adj.t().coalesce().to_sparse_csr()
+    def __init__(self, adj: torch.Tensor | None = None):
+        if adj is not None:
+            adj = adj.coalesce()
+            self.a = adj.to_sparse_csr()
+            self.a_t = adj.t().coalesce().to_sparse_csr()
+
+    @classmethod
+    def from_csr(cls, a: torch.Tensor, a_t: torch.Tensor) -> SparseMean:
+        mean = cls()
+        mean.a, mean.a_t = a, a_t
+        return mean
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
         return _CSRMatMul.apply(self.a, self.a_t, x)
+
+
+class MeanBuilder:
+    """Builds the input / output SparseMeans of a graph, optionally on a subset of its edges.
+
+    Same result as SparseMean(mean_adjacency(...)), but the edge orders needed for the CSR
+    matrices are sorted once, so a new subgraph (e.g. with dropped edges) costs O(edges).
+    """
+
+    def __init__(
+        self,
+        edge_index: torch.Tensor,
+        num_nodes: int,
+        edge_weight: torch.Tensor | None = None,
+        weighting: str = "count",
+    ):
+        self.src, self.dst = edge_index
+        self.n = num_nodes
+        self.w = _edge_values(edge_index, edge_weight, weighting)
+        self.by_dst = torch.argsort(self.dst * num_nodes + self.src)  # rows = targets
+        self.by_src = torch.argsort(self.src * num_nodes + self.dst)  # rows = sources
+
+    def _csr(self, order, rows, cols, values, keep) -> torch.Tensor:
+        if keep is not None:
+            order = order[keep[order]]
+        crow = torch.zeros(self.n + 1, dtype=torch.long, device=rows.device)
+        crow[1:] = torch.bincount(rows[order], minlength=self.n).cumsum(0)
+        return torch.sparse_csr_tensor(
+            crow, cols[order], values[order], (self.n, self.n), check_invariants=False
+        )
+
+    def _mean(self, rows, cols, by_rows, by_cols, keep) -> SparseMean:
+        w = self.w if keep is None else self.w * keep
+        total = torch.zeros(self.n, device=w.device).index_add_(0, rows, w)
+        values = w / total[rows].clamp(min=1e-12)
+        a = self._csr(by_rows, rows, cols, values, keep)
+        a_t = self._csr(by_cols, cols, rows, values, keep)
+        return SparseMean.from_csr(a, a_t)
+
+    def __call__(
+        self, bidirectional: bool = True, keep: torch.Tensor | None = None
+    ) -> tuple[SparseMean, SparseMean | None]:
+        """(mean over inputs, mean over outputs or None); keep: bool mask of edges to use."""
+        mean_in = self._mean(self.dst, self.src, self.by_dst, self.by_src, keep)
+        if not bidirectional:
+            return mean_in, None
+        return mean_in, self._mean(self.src, self.dst, self.by_src, self.by_dst, keep)
+
+
+def drop_edges(
+    edge_index: torch.Tensor, num_nodes: int, max_rate: float, generator: torch.Generator | None
+) -> torch.Tensor:
+    """Bool mask of kept edges. Every neuron draws a drop rate in [0, max_rate]; an edge is
+    dropped with the mean rate of its two neurons, so some regions lose more edges than others
+    (like parts of a connectome that are reconstructed less completely)."""
+    src, dst = edge_index
+    rate = torch.rand(num_nodes, generator=generator, device=src.device) * max_rate
+    p_drop = (rate[src] + rate[dst]) / 2
+    return torch.rand(src.numel(), generator=generator, device=src.device) >= p_drop
 
 
 class DirectedSAGELayer(nn.Module):

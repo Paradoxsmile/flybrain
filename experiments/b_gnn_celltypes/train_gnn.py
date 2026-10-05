@@ -20,9 +20,9 @@ from sklearn.metrics import f1_score
 from torch import nn
 from torch_geometric.data import Data
 
-from flybrain.features import normalize_features
+from flybrain.features import degree_features, normalize_features
 from flybrain.loading import load_graph
-from flybrain.models import DirectedSAGE, SparseMean, class_weights, mean_adjacency
+from flybrain.models import DirectedSAGE, MeanBuilder, class_weights, drop_edges
 from flybrain.splits import make_split
 from flybrain.utils import get_device, log_run, make_run_dir, set_seed
 from flybrain.viz import plot_training_curves
@@ -97,20 +97,29 @@ def main() -> None:
         min_class_size=cfg.get("min_class_size", 1),
     )
     train, val, test = make_split(data, cfg.get("split", "random"), seed=cfg["seed"])
-    data.x = normalize_features(
-        data.x, cfg.get("feature_norm", "global"), train, getattr(data, "side", None)
-    )
+    norm, side = cfg.get("feature_norm", "global"), getattr(data, "side", None)
+    raw_x = data.x
+    data.x = normalize_features(raw_x, norm, train, side)
     data = data.to(device)
+    train_cpu = train
     train, val, test = train.to(device), val.to(device), test.to(device)
 
     bidirectional = cfg.get("bidirectional", True)
-    weighting = cfg.get("edge_weight", "count")
     ei, n, w = data.edge_index, data.num_nodes, data.edge_weight
-    mean_in = SparseMean(mean_adjacency(ei, n, w, weighting))
-    mean_out = (
-        SparseMean(mean_adjacency(ei, n, w, weighting, reverse=True)) if bidirectional else None
-    )
-    adj = (mean_in, mean_out)
+    means = MeanBuilder(ei, n, w, cfg.get("edge_weight", "count"))
+    adj = means(bidirectional)
+
+    # augmentation: each epoch trains on a subgraph with randomly dropped edges, with degree
+    # features recomputed from it (scaled like the full graph), so the model cannot rely on
+    # exact degrees; evaluation always uses the full graph
+    drop_rate = cfg.get("drop_edge", 0.0)
+    gen = torch.Generator(device=device).manual_seed(cfg["seed"])
+
+    def augmented() -> tuple[torch.Tensor, tuple]:
+        keep = drop_edges(ei, n, drop_rate, gen)
+        raw = degree_features(n, ei[:, keep].cpu(), w[keep].cpu())
+        x = normalize_features(torch.from_numpy(raw).float(), norm, train_cpu, side, raw_x)
+        return x.to(device), means(bidirectional, keep)
 
     num_classes = len(data.label_names)
     weight = class_weights(data.y[train], num_classes, cfg.get("class_weight", "none"))
@@ -129,7 +138,8 @@ def main() -> None:
     for epoch in range(1, cfg["epochs"] + 1):
         model.train()
         opt.zero_grad()
-        out = model(data.x, *adj)
+        x, train_adj = augmented() if drop_rate > 0 else (data.x, adj)
+        out = model(x, *train_adj)
         loss = F.cross_entropy(out[train], data.y[train], weight=weight)
         loss.backward()
         opt.step()

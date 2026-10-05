@@ -40,10 +40,12 @@ def normalize_features(
     mode: str = "global",
     fit_mask: torch.Tensor | None = None,
     groups: np.ndarray | None = None,
+    reference: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Scale node features column-wise.
 
-    global: z-score with the mean / std of the fit_mask rows (the training nodes).
+    global: z-score with the mean / std of the fit_mask rows (the training nodes), taken from
+        reference instead of x if given (e.g. the full graph when x comes from a subgraph).
     per_side: z-score each group (e.g. hemisphere, from data.side) with its own mean / std.
     rank_per_side: within each group, map each feature to the normal quantile of its rank
         (ties share their average rank), which removes any monotone scale difference.
@@ -52,7 +54,8 @@ def normalize_features(
     if mode not in FEATURE_NORMS:
         raise ValueError(f"feature_norm must be one of {FEATURE_NORMS}, got {mode!r}")
     if mode == "global":
-        rows = x if fit_mask is None else x[fit_mask]
+        ref = x if reference is None else reference
+        rows = ref if fit_mask is None else ref[fit_mask]
         return (x - rows.mean(0)) / rows.std(0).clamp(min=1e-6)
     if groups is None:
         raise ValueError(f"feature_norm={mode!r} needs groups (a side column)")
