@@ -13,5 +13,5 @@ num_layers: 2
 dropout: 0.3
 lr: 0.01
 weight_decay: 0.0005
-epochs: 300
+epochs: 1000              # val macro-F1 is within 0.005 of its max from ~840 epochs (300 underfits)
 run_name: null           # default: gnn_<timestamp>
