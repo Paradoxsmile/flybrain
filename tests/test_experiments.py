@@ -91,3 +91,28 @@ def test_ablation_synthetic_runs():
     summary = pd.read_csv(ROOT / "results" / name / "summary.csv")
     assert len(summary) == 8
     assert "test_macro_f1_mean" in summary.columns
+
+
+def test_benchmark_synthetic_runs_and_summarizes():
+    out = "pytest_benchmark"
+    cmd = [
+        sys.executable,
+        str(ROOT / "experiments/b_gnn_celltypes/benchmark.py"),
+        "--synthetic",
+        "--seeds",
+        "0",
+        "--splits",
+        "left_right",
+        "--methods",
+        "majority",
+        "gnn",
+        "--epochs",
+        "3",
+        "--out",
+        out,
+    ]
+    subprocess.run(cmd, check=True, cwd=ROOT)
+    runs = pd.read_csv(ROOT / "results" / out / "runs.csv")
+    assert len(runs) == 4  # 2 labels x 1 split x 2 methods x 1 seed
+    assert set(runs.method) == {"majority", "gnn"}
+    assert "| gnn |" in (ROOT / "results" / out / "summary.md").read_text()

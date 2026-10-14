@@ -36,7 +36,7 @@ from flybrain.utils import log_run, make_run_dir, set_seed, write_predictions
 
 METHODS = ("majority", "label_prop", "partner_profile")
 LP_ALPHAS = (0.1, 0.3, 0.5, 0.8, 0.9, 0.99)
-PROFILE_CS = (1.0, 10.0, 100.0)
+PROFILE_CS = (10.0, 100.0, 1000.0)  # C=1 was worst on every split; 1000 brackets the optimum
 PROFILE_CLASS_WEIGHTS = (None, "balanced")
 
 
