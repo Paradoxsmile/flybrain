@@ -115,7 +115,8 @@ def build_graph(
 
     Classes with fewer than `min_class_size` neurons are treated as unlabeled.
 
-    Attributes: x (degree features), edge_index, edge_weight, y, node_ids, label_names.
+    Attributes: x (degree features), edge_index, edge_weight, y, node_ids, label_names, and
+    side (array of "left" / "right" / "center" / "", if the neurons table has a side column).
     """
     neurons, connections = clean_tables(neurons, connections)
     index = pd.Series(np.arange(len(neurons)), index=neurons[ID_COL])
@@ -138,6 +139,8 @@ def build_graph(
     )
     data.node_ids = torch.from_numpy(neurons[ID_COL].to_numpy().copy())
     data.label_names = [str(n) for n in names]
+    if "side" in neurons.columns:
+        data.side = neurons["side"].astype("string").fillna("").to_numpy(dtype=str)
     return data
 
 

@@ -37,4 +37,5 @@ def make_synthetic_tables(
             "syn_count": rng.integers(1, 20, len(pre)),
         }
     )
+    neurons["side"] = rng.choice(["left", "right", "center"], n_nodes, p=[0.48, 0.48, 0.04])
     return neurons, connections

@@ -9,10 +9,10 @@ import argparse
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score
-from sklearn.preprocessing import StandardScaler
 
+from flybrain.features import FEATURE_NORMS, normalize_features
 from flybrain.loading import load_graph
-from flybrain.splits import stratified_split
+from flybrain.splits import SPLITS, make_split
 from flybrain.utils import log_run, make_run_dir, set_seed
 
 
@@ -21,6 +21,8 @@ def main() -> None:
     p.add_argument("--synthetic", action="store_true", help="use the synthetic test graph")
     p.add_argument("--label-col", default="super_class", choices=["super_class", "cell_type"])
     p.add_argument("--min-class-size", type=int, default=1, help="smaller classes are unlabeled")
+    p.add_argument("--split", default="random", choices=SPLITS)
+    p.add_argument("--feature-norm", default="global", choices=FEATURE_NORMS)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--run-name", default=None)
     args = p.parse_args()
@@ -32,16 +34,16 @@ def main() -> None:
         seed=args.seed,
         min_class_size=args.min_class_size,
     )
-    train, val, test = stratified_split(data.y, seed=args.seed)
-    x, y = data.x.numpy(), data.y.numpy()
+    train, val, test = make_split(data, args.split, seed=args.seed)
+    x = normalize_features(data.x, args.feature_norm, train, getattr(data, "side", None)).numpy()
+    y = data.y.numpy()
 
-    scaler = StandardScaler().fit(x[train])
     clf = LogisticRegression(max_iter=1000, random_state=args.seed)
-    clf.fit(scaler.transform(x[train]), y[train])
+    clf.fit(x[train], y[train])
 
     metrics: dict[str, float | int] = {"num_nodes": int(data.num_nodes)}
     for name, mask in (("train", train), ("val", val), ("test", test)):
-        pred = clf.predict(scaler.transform(x[mask]))
+        pred = clf.predict(x[mask])
         metrics[f"{name}_acc"] = float(accuracy_score(y[mask], pred))
         metrics[f"{name}_macro_f1"] = float(f1_score(y[mask], pred, average="macro"))
 

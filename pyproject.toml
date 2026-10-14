@@ -15,6 +15,7 @@ dependencies = [
     "torch-geometric",
     "pyyaml",
     "matplotlib",
+    "scipy>=1.17.1",
 ]
 
 [dependency-groups]

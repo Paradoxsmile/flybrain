@@ -1,13 +1,17 @@
+# Best options from the super_class ablation (3 seeds): class weighting hurts once bidirectional is on.
 seed: 0
 label_col: super_class   # or cell_type
 min_class_size: 1        # classes with fewer neurons are unlabeled (e.g. 20 for cell_type)
+split: random            # random | left_right | right_left (train on one hemisphere, test on the other)
+feature_norm: global     # global (z-score on train) | per_side | rank_per_side (per hemisphere)
+drop_edge: 0.0           # augmentation: per-neuron edge drop rate drawn from [0, drop_edge] each epoch
 bidirectional: true      # also aggregate over postsynaptic partners (false = plain GraphSAGE)
 edge_weight: count       # neighbor mean weighted by: none | count (synapses) | log (log1p synapses)
-class_weight: balanced   # loss weights against class imbalance: none | balanced | sqrt
+class_weight: none       # loss weights against class imbalance: none | balanced | sqrt
 hidden_dim: 64
 num_layers: 2
 dropout: 0.3
 lr: 0.01
 weight_decay: 0.0005
-epochs: 300
+epochs: 1000              # val macro-F1 is within 0.005 of its max from ~840 epochs (300 underfits)
 run_name: null           # default: gnn_<timestamp>

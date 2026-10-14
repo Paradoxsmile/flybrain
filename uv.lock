@@ -340,6 +340,7 @@ dependencies = [
     { name = "pyarrow" },
     { name = "pyyaml" },
     { name = "scikit-learn" },
+    { name = "scipy" },
     { name = "torch" },
     { name = "torch-geometric" },
 ]
@@ -359,6 +360,7 @@ requires-dist = [
     { name = "pyarrow" },
     { name = "pyyaml" },
     { name = "scikit-learn" },
+    { name = "scipy", specifier = ">=1.17.1" },
     { name = "torch" },
     { name = "torch-geometric" },
 ]
