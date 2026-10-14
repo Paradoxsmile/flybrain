@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
@@ -24,7 +23,7 @@ from flybrain.features import degree_features, normalize_features
 from flybrain.loading import load_graph
 from flybrain.models import DirectedSAGE, MeanBuilder, class_weights, drop_edges
 from flybrain.splits import make_split
-from flybrain.utils import get_device, log_run, make_run_dir, set_seed
+from flybrain.utils import get_device, log_run, make_run_dir, set_seed, write_predictions
 from flybrain.viz import plot_training_curves
 
 DEFAULT_CONFIG = Path(__file__).parent / "configs" / "default.yaml"
@@ -41,24 +40,9 @@ def evaluate(model: nn.Module, data: Data, adj: tuple, mask: torch.Tensor) -> tu
 
 @torch.no_grad()
 def save_predictions(model: nn.Module, data: Data, adj: tuple, masks: tuple, path: Path) -> None:
-    """Write one row per neuron: root_id, side, true and predicted label, split."""
+    """Write the model's predictions for every neuron (see flybrain.utils.write_predictions)."""
     model.eval()
-    pred = model(data.x, *adj).argmax(1).cpu().numpy()
-    names = np.array(data.label_names + [None], dtype=object)  # y = -1 -> None
-    split = np.full(data.num_nodes, "", dtype=object)
-    for name, mask in zip(("train", "val", "test"), masks, strict=True):
-        split[mask.cpu().numpy()] = name
-    df = pd.DataFrame(
-        {
-            "root_id": data.node_ids.numpy(),
-            "label": names[data.y.cpu().numpy()],
-            "pred": names[pred],
-            "split": split,
-        }
-    )
-    if getattr(data, "side", None) is not None:
-        df.insert(1, "side", data.side)
-    df.to_parquet(path, index=False)
+    write_predictions(path, data, model(data.x, *adj).argmax(1).cpu().numpy(), masks)
 
 
 def main() -> None:

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
 import torch
 import yaml
 
@@ -41,3 +42,25 @@ def log_run(run_dir: Path, config: dict[str, Any], metrics: dict[str, Any]) -> N
     """Write config.yaml and metrics.json into the run directory."""
     (run_dir / "config.yaml").write_text(yaml.safe_dump(config, sort_keys=True))
     (run_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
+
+
+def write_predictions(path: Path, data, pred: np.ndarray, masks: tuple) -> None:
+    """Write one row per neuron: root_id, side (if known), true and predicted label, split.
+
+    pred: predicted class index per neuron; masks: boolean (train, val, test) tensors.
+    """
+    names = np.array(list(data.label_names) + [None], dtype=object)  # index -1 -> None
+    split = np.full(data.num_nodes, "", dtype=object)
+    for name, mask in zip(("train", "val", "test"), masks, strict=True):
+        split[mask.cpu().numpy()] = name
+    df = pd.DataFrame(
+        {
+            "root_id": data.node_ids.cpu().numpy(),
+            "label": names[data.y.cpu().numpy()],
+            "pred": names[np.asarray(pred)],
+            "split": split,
+        }
+    )
+    if getattr(data, "side", None) is not None:
+        df.insert(1, "side", data.side)
+    df.to_parquet(path, index=False)
