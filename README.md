@@ -1,5 +1,10 @@
 # flybrain
 
+[![CI](https://github.com/Paradoxsmile/flybrain/actions/workflows/ci.yml/badge.svg)](https://github.com/Paradoxsmile/flybrain/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](pyproject.toml)
+[![Data: FlyWire FAFB v783](https://img.shields.io/badge/data-FlyWire%20FAFB%20v783-lightgrey.svg)](https://codex.flywire.ai)
+
 Machine learning on the *Drosophila* connectome: how much of a neuron's identity is encoded in its wiring alone, and what does connectome-constrained modelling of the fly visual system tell us about the role of wiring?
 
 > Status: part b has results on FlyWire (FAFB v783), including a cross-hemisphere test. The MCNS transfer and part c are open.
@@ -50,6 +55,13 @@ CPU works by default; CUDA is used automatically when available.
 
 FlyWire FAFB v783, test accuracy (%) / macro-F1, mean ± std over 3 seeds, produced by `benchmark.py` (baselines on CPU at commit `2000b7b`, GNN rows on a Kaggle T4 GPU at `343125f`). Hemisphere columns: trained on the first hemisphere, tested on the second.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmark_dark.png">
+  <img alt="Test accuracy per method and split. The GNN stays at 87 to 98 percent on every split; the partner-profile baseline reaches 91 to 92 percent on the random split but falls to 1 to 9 percent (cell types) and about 46 percent (super classes) when tested on the unlabeled hemisphere." src="docs/benchmark_light.png">
+</picture>
+
+Each dot is one split (mean over seeds, whiskers = std); the grey line spans a method's best and worst split. Figure: `experiments/b_gnn_celltypes/plot_benchmark.py`.
+
 **cell_type** (434 types)
 
 | Method | random | left → right | right → left |
@@ -94,6 +106,8 @@ Findings:
 - The synthetic graph is for testing only and says nothing about biology.
 
 ## Citation
+
+Citation metadata are in [CITATION.cff](CITATION.cff) (GitHub's "Cite this repository" button), or as BibTeX:
 
 ```bibtex
 @misc{vogt2026flybrain,
