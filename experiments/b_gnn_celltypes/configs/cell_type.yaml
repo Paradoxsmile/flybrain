@@ -9,7 +9,7 @@ bidirectional: true      # also aggregate over postsynaptic partners (false = pl
 edge_weight: count       # neighbor mean weighted by: none | count (synapses) | log (log1p synapses)
 class_weight: balanced   # loss weights against class imbalance: none | balanced | sqrt
 hidden_dim: 64
-num_layers: 2
+num_layers: 3             # val macro-F1 (seed 0): 2 -> 0.903, 3 -> 0.934, 4 -> 0.931
 dropout: 0.3
 lr: 0.01
 weight_decay: 0.0005
