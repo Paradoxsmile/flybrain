@@ -1,20 +1,27 @@
-"""Label-free mapping of cell types from FAFB to the MCNS brain: every choice without MCNS labels.
+"""Label-free mapping of cell types between FAFB and the MCNS brain, every choice without target
+labels.
 
 Per label, with the GNNs saved by transfer.py (model.pt, one per seed):
-1. Class probabilities on FAFB and on every MCNS preprocessing (alignment variant x feature
-   normalization, see transfer.py).
-2. Prior matching (flybrain.adapt): predicted type sizes on MCNS are pulled towards the type
-   sizes the same GNN predicts on FAFB (scaled to MCNS), with strength rho in RHOS.
+1. Class probabilities on the source graph and, for every candidate preprocessing (MCNS alignment
+   variant x feature normalization, see transfer.py), on the target graph.
+2. Prior matching (flybrain.adapt): predicted type sizes on the target are pulled towards the
+   type sizes the same GNN predicts on its source (scaled to the target), with strength rho.
 3. Selection: the candidate (variant, normalization, rho) whose ensemble labeling (mean of the
    seeds' adjusted probabilities) has the highest type consistency (flybrain.consistency) on the
-   SCORING graph, the least preprocessed MCNS graph (`raw`), is chosen. Consistency on the other
-   two graphs is reported to show whether the choice depends on the scoring graph.
-4. Refinement: NTAC on the chosen graph, seeded with the neurons on which all seeds agree.
-MCNS labels are only used to report accuracy.
+   scoring graph is chosen.
+4. Refinement: NTAC on the chosen target graph, seeded where all seeds agree.
+Target labels are only used to report accuracy.
+
+--direction forward (default): GNNs trained on FAFB (--models, one directory); the MCNS target is
+  built in each alignment variant; scoring graph: the least preprocessed MCNS graph (`raw`), with
+  consistency on the other two graphs reported to show whether the choice depends on it.
+--direction reverse: GNNs trained on MCNS, one directory per alignment variant
+  (<models>_<variant>, from transfer.py --source mcns); target and scoring graph: FAFB.
 
 Writes results/<out>/<label>/candidates.csv, selected.json, predictions.parquet and summary.md.
 
 Usage: python experiments/b_gnn_celltypes/label_free.py [--models transfer2] [--labels cell_type]
+       python experiments/b_gnn_celltypes/label_free.py --direction reverse --models transfer_rev
 """
 
 from __future__ import annotations
@@ -41,7 +48,41 @@ from flybrain.utils import REPO_ROOT, write_predictions
 LABELS = {"super_class": 1, "cell_type": 20}  # min_class_size, as in the configs
 NORMS = ("target", "source")
 RHOS = (0.0, 0.25, 0.5, 0.75, 1.0)
-SCORING = "raw"
+SCORING = "raw"  # forward direction: least preprocessed MCNS graph
+
+
+def model_paths(models: str, label: str) -> list:
+    paths = sorted((REPO_ROOT / "results" / models / label / "gnn").glob("s*/model.pt"))
+    if not paths:
+        raise FileNotFoundError(f"no model.pt under results/{models}/{label}/gnn")
+    return paths
+
+
+def setups(label: str, args):
+    """[(variant, model paths, source graph, target graph)], graphs to score on, scoring key."""
+    msize = LABELS[label]
+    variants = ["synthetic"] if args.synthetic else list(VARIANTS)
+
+    def mcns(v):
+        return load_graph(
+            label,
+            synthetic=args.synthetic,
+            min_class_size=msize,
+            dataset="mcns",
+            mcns_variant="density" if args.synthetic else v,
+        )
+
+    fafb = load_graph(label, synthetic=args.synthetic, min_class_size=msize)
+    if args.direction == "forward":
+        paths = model_paths(args.models, label)
+        graphs = {v: mcns(v) for v in variants}
+        scoring = variants[0] if args.synthetic else SCORING
+        return [(v, paths, fafb, graphs[v]) for v in variants], graphs, scoring
+    cases = []
+    for v in variants:
+        paths = model_paths(args.models if args.synthetic else f"{args.models}_{v}", label)
+        cases.append((v, paths, mcns(v), fafb))
+    return cases, {"fafb": fafb}, "fafb"
 
 
 @torch.no_grad()
@@ -56,35 +97,20 @@ def score(pred, y) -> tuple[float, float]:
 
 
 def run_label(label: str, args, out_dir) -> dict:
-    models = sorted((REPO_ROOT / "results" / args.models / label / "gnn").glob("s*/model.pt"))
-    if not models:
-        raise FileNotFoundError(f"no model.pt under results/{args.models}/{label}/gnn")
-    msize = LABELS[label]
-    src = load_graph(label, synthetic=args.synthetic, min_class_size=msize)
-    variants = ["synthetic"] if args.synthetic else list(VARIANTS)
-    graphs = {
-        v: load_graph(
-            label,
-            synthetic=args.synthetic,
-            min_class_size=msize,
-            dataset="mcns",
-            mcns_variant="density" if args.synthetic else v,
-        )
-        for v in variants
-    }
-    scoring = graphs.get(SCORING, next(iter(graphs.values())))
-    y = scoring.y.numpy()
-    k = len(src.label_names)
+    cases, graphs, scoring_key = setups(label, args)
+    targets = {variant: tgt for variant, _, _, tgt in cases}
+    y = graphs[scoring_key].y.numpy()
+    k = len(cases[0][2].label_names)
+    used_models = sorted({str(m) for _, paths, _, _ in cases for m in paths})
 
     rows, preds = [], {}  # preds[(variant, norm, rho)] = [seed predictions]
-    for variant, norm in itertools.product(variants, NORMS):
+    for (variant, paths, src, tgt), norm in itertools.product(cases, NORMS):
         seed_probs, seed_weights = [], []  # float32 probabilities and prior weights per seed
-        for path in models:
+        for path in paths:
             model, cfg, names = load_model(path)
-            assert names == src.label_names == graphs[variant].label_names
+            assert names == src.label_names == tgt.label_names
             train = make_split(src, "random", seed=cfg["seed"])[0]
             ref = probabilities(model, cfg, src, normalize_features(src.x, "global", train))
-            tgt = graphs[variant]
             x = (
                 normalize_features(tgt.x, "global")
                 if norm == "target"
@@ -119,8 +145,7 @@ def run_label(label: str, args, out_dir) -> dict:
             print(f"[label_free] {label} {row}", flush=True)
 
     cand = pd.DataFrame(rows)
-    key = f"consistency_{SCORING if SCORING in graphs else variants[0]}"
-    best = cand.loc[cand[key].idxmax()]
+    best = cand.loc[cand[f"consistency_{scoring_key}"].idxmax()]
     chosen = (best.variant, best.norm, float(best.rho))
     other_choices = {
         c: tuple(cand.loc[cand[c].idxmax(), ["variant", "norm", "rho"]])
@@ -129,14 +154,15 @@ def run_label(label: str, args, out_dir) -> dict:
     }
 
     # refinement: NTAC on the chosen graph, seeded where all seeds agree
-    g = graphs[chosen[0]]
+    g = targets[chosen[0]]
     seed_preds = np.stack(preds[chosen])
     refined, seeds = ntac_from_predictions(
         g.edge_index, g.edge_weight, np.full(g.num_nodes, -1), seed_preds, k
     )
     sel = {
         "label": label,
-        "models": [str(m) for m in models],
+        "direction": args.direction,
+        "models": used_models,
         "chosen": {"variant": chosen[0], "norm": chosen[1], "rho": chosen[2]},
         "choice_by_scoring_graph": {c: list(v) for c, v in other_choices.items()},
         "selected_acc": float(best.acc),
@@ -163,14 +189,19 @@ def run_label(label: str, args, out_dir) -> dict:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--models", default="transfer2", help="results subdirectory with model.pt files")
+    p.add_argument("--direction", default="forward", choices=["forward", "reverse"])
+    p.add_argument("--models", default=None, help="results subdirectory (prefix for reverse)")
     p.add_argument("--labels", nargs="+", default=list(LABELS), choices=list(LABELS))
     p.add_argument("--synthetic", action="store_true", help="synthetic stand-ins (for tests)")
-    p.add_argument("--out", default="label_free")
+    p.add_argument("--out", default=None, help="default: label_free[_rev]")
     args = p.parse_args()
+    reverse = args.direction == "reverse"
+    args.models = args.models or ("transfer_rev" if reverse else "transfer2")
+    args.out = args.out or ("label_free_rev" if reverse else "label_free")
     out_dir = REPO_ROOT / "results" / args.out
     sels = [run_label(label, args, out_dir) for label in args.labels]
-    lines = ["Label-free FAFB -> MCNS mapping (accuracy % / macro-F1 on labeled MCNS neurons).", ""]
+    pair = "MCNS -> FAFB" if reverse else "FAFB -> MCNS"
+    lines = [f"Label-free {pair} mapping (accuracy % / macro-F1 on labeled target neurons).", ""]
     header = ["label", "chosen (variant, norm., rho)", "no adaptation", "prior matched", "+ NTAC"]
     header += ["best candidate (post hoc)"]
     lines += ["| " + " | ".join(header) + " |", "|---" * len(header) + "|"]

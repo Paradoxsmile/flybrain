@@ -1,5 +1,8 @@
 """Transfer: train on FAFB, predict super classes / cell types on the male CNS (MCNS) brain.
 
+With --source mcns the direction is reversed: methods are fit on the MCNS brain (preprocessed as
+--source-variant) and applied to FAFB.
+
 Each method is fit on FAFB (random split; validation picks the training epoch and options, as in
 benchmark.py) and applied to the MCNS brain without any MCNS label. Every MCNS graph variant
 (flybrain.mcns.VARIANTS) is evaluated with two feature normalizations, from the same fit:
@@ -19,6 +22,7 @@ summary.md for all finished runs. Finished runs are skipped.
 
 Usage: python experiments/b_gnn_celltypes/transfer.py [--labels cell_type] [--methods gnn]
        [--seeds 0 1 2] [--variants density raw janelia] [--no-run]
+       [--source mcns --source-variant raw --out transfer_rev_raw]
 """
 
 from __future__ import annotations
@@ -80,15 +84,21 @@ def target_x(src_raw, train, tgt, norm: str) -> torch.Tensor:
 
 
 def run_one(label: str, method: str, seed: int, targets: dict, args, run_dir: Path) -> None:
-    """Fit one method on FAFB and evaluate it on every target graph and normalization."""
+    """Fit one method on the source graph and evaluate it on every target and normalization."""
     cfg = yaml.safe_load(CONFIGS[label].read_text())
-    cfg.update(seed=seed, **(PLAIN if method == "gnn_plain" else {}))
+    cfg.update(seed=seed, dataset=args.source, mcns_variant=args.source_variant)
+    cfg.update(PLAIN if method == "gnn_plain" else {})
     if args.epochs:
         cfg["epochs"] = args.epochs
     set_seed(seed)
     device = get_device()
     src = load_graph(
-        label, synthetic=args.synthetic, seed=seed, min_class_size=cfg.get("min_class_size", 1)
+        label,
+        synthetic=args.synthetic,
+        seed=seed,
+        min_class_size=cfg.get("min_class_size", 1),
+        dataset=args.source,
+        mcns_variant=args.source_variant,
     )
     train, val, test = make_split(src, "random", seed=seed)
     for tgt in targets.values():
@@ -127,8 +137,8 @@ def run_one(label: str, method: str, seed: int, targets: dict, args, run_dir: Pa
 
     y = src.y.numpy()
     t = test.numpy()
-    metrics["fafb_test_acc"] = float((src_pred[t] == y[t]).mean())
-    metrics["fafb_test_macro_f1"] = float(f1_score(y[t], src_pred[t], average="macro"))
+    metrics[f"{args.source}_test_acc"] = float((src_pred[t] == y[t]).mean())
+    metrics[f"{args.source}_test_macro_f1"] = float(f1_score(y[t], src_pred[t], average="macro"))
     for (variant, tgt), norm in itertools.product(targets.items(), NORMS):
         pred = apply(tgt, norm)
         metrics.update({f"{variant}_{norm}_{k}": v for k, v in scores(pred, tgt).items()})
@@ -147,11 +157,9 @@ def summarize(out_dir: Path) -> None:
     for f in sorted(out_dir.glob("*/*/s*/metrics.json")):
         label, method, seed = f.parts[-4:-1]
         m = json.loads(f.read_text())
-        targets = [("fafb", "test")] + [
-            (v, n) for v in VARIANTS for n in NORMS if f"{v}_{n}_acc" in m
-        ]
-        for variant, norm in targets:
-            key = "fafb_test" if variant == "fafb" else f"{variant}_{norm}"
+        keys = [k[: -len("_acc")] for k in m if k.endswith("_acc") and not k.endswith("_set_acc")]
+        for key in keys:  # "<graph>_test" (source test split) or "<target graph>_<normalization>"
+            variant, norm = key.split("_", 1)
             rows.append(
                 dict(
                     label=label,
@@ -173,10 +181,10 @@ def summarize(out_dir: Path) -> None:
     summary.columns = [f"{m}_{s}" for m, s in summary.columns]
     summary.to_csv(out_dir / "summary.csv")
     lines = [
-        "Accuracy (%) / macro-F1, mean ± std over seeds. Trained on FAFB; fafb/test is the",
+        "Accuracy (%) / macro-F1, mean ± std over seeds. <graph>/test is the test split of the",
         "",
     ]
-    lines[0] += " FAFB test split, all other columns are the MCNS brain (variant/normalization)."
+    lines[0] += " training graph, all other columns are the target graph (variant/normalization)."
     for label, df in summary.reset_index().groupby("label"):
         df = df.assign(
             cell=[
@@ -186,7 +194,7 @@ def summarize(out_dir: Path) -> None:
         )
         table = df.pivot(index="method", columns="target", values="cell")
         table = table.reindex([m for m in METHODS if m in table.index])
-        cols = ["fafb/test"] + [c for c in table.columns if c != "fafb/test"]
+        cols = sorted(table.columns, key=lambda c: (not c.endswith("/test"), c))
         table = table[cols]
         lines += [
             f"## {label}",
@@ -207,6 +215,13 @@ def main() -> None:
     p.add_argument("--variants", nargs="+", default=list(VARIANTS), choices=list(VARIANTS))
     p.add_argument("--epochs", type=int, default=None, help="override GNN epochs (for tests)")
     p.add_argument("--synthetic", action="store_true", help="synthetic stand-ins for both graphs")
+    p.add_argument("--source", default="fafb", choices=["fafb", "mcns"], help="training graph")
+    p.add_argument(
+        "--source-variant",
+        default="density",
+        choices=list(VARIANTS),
+        help="MCNS preprocessing when training on MCNS",
+    )
     p.add_argument("--out", default="transfer", help="results subdirectory")
     p.add_argument("--no-run", action="store_true", help="only summarize finished runs")
     args = p.parse_args()
@@ -220,7 +235,13 @@ def main() -> None:
             if (run_dir / "metrics.json").exists():
                 continue
             # MCNS graphs depend on neither method nor seed (synthetic stand-ins do on the seed)
-            if targets is None or args.synthetic:
+            if (targets is None or args.synthetic) and args.source == "mcns":
+                targets = {
+                    "fafb": load_graph(
+                        label, synthetic=args.synthetic, seed=seed, min_class_size=min_size
+                    )
+                }
+            elif targets is None or args.synthetic:
                 targets = {
                     v: load_graph(
                         label,

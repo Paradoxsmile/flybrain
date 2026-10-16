@@ -136,3 +136,19 @@ def test_label_free_synthetic_runs():
     sel = json.loads((out / "selected.json").read_text())
     assert {"chosen", "selected_acc", "refined_acc", "no_adaptation_acc"} <= set(sel)
     assert len(pd.read_csv(out / "candidates.csv")) == 2 * 5  # 2 normalizations x 5 rho
+
+
+def test_reverse_transfer_and_label_free_synthetic_run():
+    models = "pytest_transfer_rev"
+    train = [sys.executable, str(ROOT / "experiments/b_gnn_celltypes/transfer.py"), "--synthetic"]
+    train += ["--source", "mcns", "--labels", "super_class", "--methods", "gnn", "--seeds", "0"]
+    train += ["--epochs", "3", "--out", models]
+    subprocess.run(train, check=True, cwd=ROOT)
+    m = json.loads((ROOT / "results" / models / "super_class/gnn/s0/metrics.json").read_text())
+    assert {"mcns_test_acc", "fafb_source_acc", "fafb_target_acc"} <= set(m)
+    run = [sys.executable, str(ROOT / "experiments/b_gnn_celltypes/label_free.py"), "--synthetic"]
+    run += ["--direction", "reverse", "--models", models, "--labels", "super_class"]
+    run += ["--out", "pytest_label_free_rev"]
+    subprocess.run(run, check=True, cwd=ROOT)
+    sel = json.loads((ROOT / "results/pytest_label_free_rev/super_class/selected.json").read_text())
+    assert sel["direction"] == "reverse" and "refined_acc" in sel
