@@ -16,11 +16,13 @@ dependencies = [
     "pyyaml",
     "matplotlib",
     "scipy>=1.17.1",
+    "numba>=0.68.0",
 ]
 
 [dependency-groups]
 dev = [
     "ipykernel>=7.4.0",
+    "ntac>=0.1.2",
     "pytest",
     "ruff",
 ]

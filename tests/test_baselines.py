@@ -66,7 +66,7 @@ def test_edge_homophily():
     assert 0 <= chance <= 1
 
 
-@pytest.mark.parametrize("method", ["majority", "label_prop", "partner_profile"])
+@pytest.mark.parametrize("method", ["majority", "label_prop", "partner_profile", "ntac"])
 def test_baseline_script_synthetic(method):
     name = f"pytest_baseline_{method}"
     cmd = [

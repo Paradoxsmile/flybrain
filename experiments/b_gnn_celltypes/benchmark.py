@@ -10,6 +10,7 @@ Methods (in order of the information they use):
   logreg           a neuron's own degree features
   label_prop       labels of connected neurons (homophily)
   partner_profile  label shares of synaptic partners
+  ntac             partner-type synapse counts, partner labels updated iteratively (NTAC)
   gnn_plain        GraphSAGE: anonymous structure, inputs only, unweighted
   gnn              DirectedSAGE with the label's config (configs/default.yaml, cell_type.yaml)
 
@@ -38,7 +39,7 @@ CONFIGS = {
     "super_class": HERE / "configs/default.yaml",
     "cell_type": HERE / "configs/cell_type.yaml",
 }
-METHODS = ("majority", "logreg", "label_prop", "partner_profile", "gnn_plain", "gnn")
+METHODS = ("majority", "logreg", "label_prop", "partner_profile", "ntac", "gnn_plain", "gnn")
 PLAIN = ["--set", "bidirectional=false", "--set", "edge_weight=none", "--set", "class_weight=none"]
 METRICS = ["test_acc", "test_macro_f1", "val_acc", "val_macro_f1"]
 

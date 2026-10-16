@@ -6,9 +6,13 @@ label_prop:      label spreading over the synapse graph; assumes partners share 
 partner_profile: logistic regression on the share of a neuron's input and output synapses per
                  partner class (partners with training labels only); the information that
                  connectivity-based cell typing uses.
+ntac:            seeded NTAC (Schwartzman et al., 2026): each unlabeled neuron takes the label of
+                 the labeled neuron with the most similar partner-type synapse counts, then the
+                 partner labels are updated with the predictions and the step repeats.
 
 Hyperparameters are chosen by validation macro-F1 (alpha and class mass normalization for
-label_prop; C and class weighting for partner_profile); the choice is logged with the metrics.
+label_prop; C and class weighting for partner_profile; the number of steps for ntac); the choice
+is logged with the metrics.
 
 Usage: python experiments/b_gnn_celltypes/baselines.py --method partner_profile
        [--label-col cell_type --min-class-size 20] [--split left_right] [--synthetic]
@@ -31,13 +35,16 @@ from flybrain.baselines import (
     propagation_matrix,
 )
 from flybrain.loading import load_graph
+from flybrain.ntac import ntac_seeded
 from flybrain.splits import SPLITS, make_split
 from flybrain.utils import log_run, make_run_dir, set_seed, write_predictions
 
-METHODS = ("majority", "label_prop", "partner_profile")
+METHODS = ("majority", "label_prop", "partner_profile", "ntac")
 LP_ALPHAS = (0.1, 0.3, 0.5, 0.8, 0.9, 0.99)
 PROFILE_CS = (10.0, 100.0, 1000.0)  # C=1 was worst on every split; 1000 brackets the optimum
 PROFILE_CLASS_WEIGHTS = (None, "balanced")
+NTAC_STEPS = 20  # the paper uses 15; the step with the best validation macro-F1 is kept
+NTAC_LR = 0.3  # package default
 
 
 def scores(y: np.ndarray, pred: np.ndarray, mask: np.ndarray) -> tuple[float, float]:
@@ -88,6 +95,19 @@ def main() -> None:
                 if f1 > best[0]:
                     best = (f1, (alpha, cmn), cand)
         _, (chosen["alpha"], chosen["class_mass_norm"]), pred = best
+
+    elif args.method == "ntac":
+        best = (-1.0, None, None)
+        runs = ntac_seeded(
+            data.edge_index, data.edge_weight, data.y, masks[0], k, NTAC_LR, NTAC_STEPS
+        )
+        for step, cand in enumerate(runs, 1):
+            f1 = scores(y, cand, val)[1]
+            print(f"[ntac] step {step}: val macro-F1 {f1:.4f}", flush=True)
+            if f1 > best[0]:
+                best = (f1, step, cand)
+        _, chosen["step"], pred = best
+        chosen["lr"] = NTAC_LR
 
     else:  # partner_profile
         x = partner_profiles(data.edge_index, data.edge_weight, data.y, masks[0], k)
