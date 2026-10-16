@@ -60,6 +60,7 @@ def main() -> None:
     p.add_argument("--label-col", default="super_class", choices=["super_class", "cell_type"])
     p.add_argument("--min-class-size", type=int, default=1, help="smaller classes are unlabeled")
     p.add_argument("--split", default="random", choices=SPLITS)
+    p.add_argument("--dataset", default="fafb", choices=["fafb", "mcns"])
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--synthetic", action="store_true", help="use the synthetic test graph")
     p.add_argument("--run-name", default=None)
@@ -71,6 +72,7 @@ def main() -> None:
         synthetic=args.synthetic,
         seed=args.seed,
         min_class_size=args.min_class_size,
+        dataset=args.dataset,
     )
     masks = make_split(data, args.split, seed=args.seed)
     train, val, test = (m.numpy() for m in masks)

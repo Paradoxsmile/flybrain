@@ -1,0 +1,108 @@
+"""MCNS preprocessing, label alignment with FAFB, and the transfer script on synthetic graphs."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from flybrain.loading import encode_labels, load_graph
+from flybrain.mcns import brain_neurons, load_mcns_tables
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _annotations() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "bodyId": [1, 2, 3, 4, 5, 6, 7],
+            "status": ["Traced", "Traced", "Orphan", "Traced", "Traced", "Traced", "Traced"],
+            "superclass": [
+                "ol_intrinsic",
+                "cb_sensory",
+                "cb_intrinsic",
+                "vnc_motor",
+                "ENS",
+                None,
+                "sensory_descending",
+            ],
+            "flywireType": ["T4c", "VS1,VS2", "x", "MNx", "y", "CB0001", None],
+            "somaSide": ["L", None, "R", "R", "L", "M", None],
+            "rootSide": [None, "R", None, None, None, None, None],
+        }
+    )
+
+
+def test_brain_neurons_selection_and_mapping():
+    n = brain_neurons(_annotations())
+    # orphan, VNC and enteric neurons are dropped; unmapped superclasses stay as unlabeled nodes
+    assert n.root_id.tolist() == [1, 2, 6, 7]
+    assert n.super_class.tolist()[:2] == ["optic", "sensory"]
+    assert n.super_class.isna().tolist()[2:] == [True, True]
+    # a type list is not a single label, but is kept for set-based evaluation
+    assert n.cell_type.tolist()[0] == "T4c" and pd.isna(n.cell_type.tolist()[1])
+    assert n.flywire_types.tolist()[1] == "VS1,VS2"
+    assert n.side.tolist() == ["left", "right", "center", ""]
+
+
+def test_mcns_variants_threshold_and_scale(tmp_path):
+    neurons = brain_neurons(_annotations())
+    neurons.to_parquet(tmp_path / "mcns_neurons.parquet", index=False)
+    pd.DataFrame(
+        {"pre_root_id": [1, 1, 2], "post_root_id": [2, 6, 6], "syn_count": [5, 7, 9]}
+    ).to_parquet(tmp_path / "mcns_connections.parquet", index=False)
+    expected = {"raw": [5.0, 7.0, 9.0], "density": [7 * 0.581, 9 * 0.581], "janelia": [9 * 0.581]}
+    for variant, weights in expected.items():
+        _, c = load_mcns_tables(variant, tmp_path / "raw", tmp_path)
+        np.testing.assert_allclose(c.syn_count.to_numpy(), weights)
+    with pytest.raises(ValueError, match="variant"):
+        load_mcns_tables("nope", tmp_path / "raw", tmp_path)
+
+
+def test_encode_labels_in_a_given_label_space():
+    codes, names = encode_labels(pd.Series(["b", "a", "c", None, "a"]), label_names=["a", "b"])
+    assert names == ["a", "b"]
+    assert codes.tolist() == [1, 0, -1, -1, 0]
+    codes, names = encode_labels(pd.Series(["b", "a", "a", None]), min_class_size=2)
+    assert names == ["a"] and codes.tolist() == [-1, 0, 0, -1]
+
+
+def test_synthetic_mcns_shares_the_fafb_label_space():
+    fafb = load_graph("super_class", synthetic=True, seed=3)
+    mcns = load_graph("super_class", synthetic=True, seed=3, dataset="mcns")
+    assert mcns.label_names == fafb.label_names
+    assert mcns.num_nodes == fafb.num_nodes and not np.array_equal(mcns.x, fafb.x)
+
+
+def test_transfer_synthetic_runs():
+    out = "pytest_transfer"
+    cmd = [
+        sys.executable,
+        str(ROOT / "experiments/b_gnn_celltypes/transfer.py"),
+        "--synthetic",
+        "--labels",
+        "super_class",
+        "--methods",
+        "majority",
+        "gnn",
+        "--seeds",
+        "0",
+        "--variants",
+        "density",
+        "--epochs",
+        "3",
+        "--out",
+        out,
+    ]
+    subprocess.run(cmd, check=True, cwd=ROOT)
+    m = json.loads((ROOT / "results" / out / "super_class/gnn/s0/metrics.json").read_text())
+    assert {"fafb_test_acc", "density_source_acc", "density_target_macro_f1"} <= set(m)
+    assert (
+        ROOT / "results" / out / "super_class/gnn/s0/predictions-density-target.parquet"
+    ).exists()
+    assert "| gnn |" in (ROOT / "results" / out / "summary.md").read_text(encoding="utf-8")

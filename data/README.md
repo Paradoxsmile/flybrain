@@ -20,6 +20,17 @@ Check your files:
 uv run python data/download_fafb.py
 ```
 
+## Male CNS (MCNS v1.0, optional, for the transfer experiment)
+
+Download two files from the public Janelia bucket (CC-BY; see https://male-cns.janelia.org/download/) into `data/raw/mcns/`:
+
+| File | Content | Size |
+|---|---|---|
+| `body-annotations-male-cns-v1.0-minconf-0.5.feather` | per-body annotations (`superclass`, `type`, `flywireType`, `somaSide`, `status`, ...) | 14 MB |
+| `connectome-weights-male-cns-v1.0-minconf-0.5.feather` | `body_pre`, `body_post`, `weight` for all segments | 1.05 GB |
+
+Base URL: `https://storage.googleapis.com/flyem-male-cns/v1.0/connectome-data/flat-connectome/`. On first use, `flybrain/mcns.py` reduces them to the traced brain neurons and their connections with >= 5 synapses and caches `data/processed/mcns_neurons.parquet` and `mcns_connections.parquet` (about 29 MB together). The cache is enough to run the experiments elsewhere (e.g. on Kaggle) without the raw files.
+
 ## Processed cache
 
 On first use, `flybrain.loading` cleans the tables (dedupes neurons, sums synapses per pre/post pair, drops unknown ids) and writes `data/processed/neurons.parquet` and `data/processed/connections.parquet`. Delete that folder to rebuild after changing raw files.
