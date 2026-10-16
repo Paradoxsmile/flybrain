@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from sklearn.metrics import f1_score
 from torch_geometric.data import Data
 
-from flybrain.features import degree_features, normalize_features
+from flybrain.features import FEATURE_NAMES, degree_features, normalize_features
 from flybrain.models import DirectedSAGE, MeanBuilder, class_weights, drop_edges
 
 
@@ -103,3 +103,19 @@ def fit_gnn(cfg: dict, data: Data, train: torch.Tensor, val: torch.Tensor, devic
             best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
     model.load_state_dict(best_state)
     return Fitted(model, x, y, adj, history)
+
+
+def load_model(path, device="cpu") -> tuple[DirectedSAGE, dict, list[str]]:
+    """A GNN saved by transfer.py (model.pt): (model in eval mode, config, label names)."""
+    saved = torch.load(path, map_location=device, weights_only=False)
+    cfg, names = saved["cfg"], saved["label_names"]
+    model = DirectedSAGE(
+        len(FEATURE_NAMES),
+        cfg["hidden_dim"],
+        len(names),
+        cfg["num_layers"],
+        cfg["dropout"],
+        cfg.get("bidirectional", True),
+    ).to(device)
+    model.load_state_dict(saved["state_dict"])
+    return model.eval(), cfg, names

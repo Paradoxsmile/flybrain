@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from flybrain.features import normalize_features
 from flybrain.loading import encode_labels, load_graph
 from flybrain.mcns import brain_neurons, load_mcns_tables
 
@@ -106,3 +107,16 @@ def test_transfer_synthetic_runs():
         ROOT / "results" / out / "super_class/gnn/s0/predictions-density-target.parquet"
     ).exists()
     assert "| gnn |" in (ROOT / "results" / out / "summary.md").read_text(encoding="utf-8")
+
+    # the saved model reproduces the saved predictions
+    from flybrain.training import graph_inputs, load_model, predict
+
+    model, cfg, names = load_model(ROOT / "results" / out / "super_class/gnn/s0/model.pt")
+    tgt = load_graph("super_class", synthetic=True, seed=0, dataset="mcns")
+    assert names == tgt.label_names
+    x = normalize_features(tgt.x, "global")
+    pred = predict(model, *graph_inputs(tgt, x, cfg, "cpu"))
+    saved = pd.read_parquet(
+        ROOT / "results" / out / "super_class/gnn/s0/predictions-density-target.parquet"
+    )
+    assert (np.array(names, dtype=object)[pred] == saved.pred.to_numpy()).mean() > 0.99

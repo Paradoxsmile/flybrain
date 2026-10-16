@@ -13,7 +13,8 @@ For cell types, `set_acc` scores the neurons whose MCNS type maps to several FAF
 prediction counts if it is one of them.
 
 Writes results/<out>/<label>/<method>/s<seed>/metrics.json (FAFB test scores plus one entry per
-variant and normalization), predictions for the "density" variant, and runs.csv, summary.csv,
+variant and normalization), predictions for every variant and normalization, the trained GNN
+(model.pt: state_dict, config, label names) and runs.csv, summary.csv,
 summary.md for all finished runs. Finished runs are skipped.
 
 Usage: python experiments/b_gnn_celltypes/transfer.py [--labels cell_type] [--methods gnn]
@@ -99,6 +100,10 @@ def run_one(label: str, method: str, seed: int, targets: dict, args, run_dir: Pa
         fit = fit_gnn(cfg, src, train, val, device)
         metrics["best_epoch"] = int(max(fit.history, key=lambda h: h["val_macro_f1"])["epoch"])
         src_pred = predict(fit.model, fit.x, fit.adj)
+        torch.save(
+            {"state_dict": fit.model.state_dict(), "cfg": cfg, "label_names": src.label_names},
+            run_dir / "model.pt",
+        )
 
         def apply(tgt, norm):
             return predict(
@@ -127,12 +132,11 @@ def run_one(label: str, method: str, seed: int, targets: dict, args, run_dir: Pa
     for (variant, tgt), norm in itertools.product(targets.items(), NORMS):
         pred = apply(tgt, norm)
         metrics.update({f"{variant}_{norm}_{k}": v for k, v in scores(pred, tgt).items()})
-        if variant == "density":
-            lab = torch.from_numpy(tgt.y.numpy() >= 0)
-            none = torch.zeros_like(lab)
-            write_predictions(
-                run_dir / f"predictions-{variant}-{norm}.parquet", tgt, pred, (none, none, lab)
-            )
+        lab = torch.from_numpy(tgt.y.numpy() >= 0)
+        none = torch.zeros_like(lab)
+        write_predictions(
+            run_dir / f"predictions-{variant}-{norm}.parquet", tgt, pred, (none, none, lab)
+        )
     log_run(run_dir, {**cfg, "method": method, "synthetic": args.synthetic}, metrics)
     print(f"[transfer] {label} {method} s{seed}: {metrics}", flush=True)
 
