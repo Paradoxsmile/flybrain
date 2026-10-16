@@ -32,6 +32,7 @@ FlyWire (FAFB) and MCNS data are released under CC-BY. Raw files are **not** in 
 - **Model selection:** hyperparameters and the training epoch are chosen by validation macro-F1; the test set is only used for the final numbers.
 - **Male CNS** (`flybrain/mcns.py`): the traced brain neurons of MCNS v1.0 (no ventral nerve cord), with MCNS superclasses mapped to the FAFB super classes and `flywireType` to FAFB cell types (394 of the 434 types occur; entries listing several types are left out). MCNS detects more synapses per connection, so its graph is built in three alignments: `density` (>= 7 synapses, about FAFB's number of connections, counts × 0.581 as in Janelia's FlyWire comparison), `raw` (FAFB's threshold of 5, no scaling) and `janelia` (counts × 0.581, then threshold 5).
 - **Transfer** (`transfer.py`): methods are trained on FAFB as in the benchmark and applied to MCNS without any MCNS label, with features normalized by FAFB statistics (`source`) or by MCNS's own (`target`).
+- **GNN-seeded NTAC** (`hybrid.py`): neurons on which three GNNs (seeds) agree become NTAC seeds, together with any truly known labels; NTAC labels the rest. Nothing is tuned (unanimous predictions; NTAC defaults: 15 steps, learning rate 0.3).
 - **Benchmark:** `benchmark.py` runs every method on every label and split for three seeds and writes `results/benchmark/summary.md` (`--dataset mcns`: the same within MCNS). All runs log config, metrics and per-neuron predictions to `results/<run_name>/`.
 - **Part c:** plan only, see [experiments/c_constrained_rnn](experiments/c_constrained_rnn/README.md).
 
@@ -132,6 +133,22 @@ No MCNS label is used. Methods that read partner labels (partner profile, NTAC) 
 - **Choosing the alignment without labels is unsolved.** Matching the distribution of the normalized degree features to FAFB (mean 1-D Wasserstein distance) clearly prefers MCNS's own normalization but hardly separates the three alignments (0.195–0.203), and the best combination has the largest feature distance.
 - **Aggregating over outputs matters more under transfer:** the GNN is 10–20 points above GraphSAGE on cell types.
 - **Where transfer fails:** optic-lobe types transfer well (neuron-weighted F1 0.81 vs. 0.97 within MCNS; `density`, target norm., seed 0), central-brain types poorly (0.30 vs. 0.95). Several lobula columnar types (LC9, LC12, LC21) and the Kenyon cells KCab (predicted as KCg-m) are lost completely; sibling types such as T4/T5 subtypes and Dm3p/q are confused.
+
+### GNN-seeded NTAC: combining both
+
+NTAC needs labeled partners, the GNN does not. Seeding NTAC with the predictions on which three GNNs agree (`hybrid.py`) labels the neurons that have no labeled partners better than the GNNs alone. Cell types, accuracy (%) / macro-F1 on the scored neurons (the unlabeled hemisphere, or all labeled MCNS neurons for the transfer):
+
+| Scenario | NTAC alone | GNN (single) | GNN (vote of 3) | Seeds: share, accuracy | **GNN + NTAC** |
+|---|---|---|---|---|---|
+| FAFB, left → right | 8.4 / 0.20 | 94.5 / 0.90 | 94.8 / 0.91 | 94 %, 98.0 | **96.5 / 0.93** |
+| FAFB, right → left | 8.8 / 0.19 | 86.7 / 0.87 | 87.8 / 0.89 | 85 %, 95.7 | **90.8 / 0.92** |
+| MCNS, left → right | 7.8 / 0.16 | 95.4 / 0.93 | 96.0 / 0.94 | 95 %, 98.1 | **97.1 / 0.95** |
+| MCNS, right → left | 9.5 / 0.22 | 93.7 / 0.91 | 94.6 / 0.92 | 92 %, 97.7 | **96.2 / 0.93** |
+| FAFB → MCNS transfer (`density`, target norm.) | not applicable | 73.4 / 0.50 | 75.5 / 0.53 | 71 %, 89.0 | **79.5 / 0.57** |
+
+- On an unlabeled hemisphere the combination reaches 91–97 %, close to what NTAC achieves with labeled partners (97 % on the random split), while NTAC alone stays below 10 %.
+- Under transfer it adds 4 points over the GNN vote (79.5 vs. 75.5 %), without any MCNS label. The seeds limit it: 11 % of them are wrong and NTAC keeps seeds fixed.
+- For super classes the GNNs are already near the ceiling; the combination changes accuracy by at most 0.4 points.
 
 Related work and how this project relates to it: [docs/literature.md](docs/literature.md).
 
