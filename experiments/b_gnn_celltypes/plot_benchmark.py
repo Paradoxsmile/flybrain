@@ -22,6 +22,7 @@ METHODS = {
     "gnn": "GNN (inputs + outputs)",
     "gnn_plain": "GraphSAGE (inputs only)",
     "partner_profile": "Partner profile (partner labels)",
+    "ntac": "NTAC (partner labels, iterative)",
     "label_prop": "Label propagation (partner labels)",
     "logreg": "Logistic regression (own degrees)",
     "majority": "Majority class",
