@@ -120,3 +120,19 @@ def test_transfer_synthetic_runs():
         ROOT / "results" / out / "super_class/gnn/s0/predictions-density-target.parquet"
     )
     assert (np.array(names, dtype=object)[pred] == saved.pred.to_numpy()).mean() > 0.99
+
+
+def test_label_free_synthetic_runs():
+    models = "pytest_transfer_lf"
+    train = [sys.executable, str(ROOT / "experiments/b_gnn_celltypes/transfer.py"), "--synthetic"]
+    # one seed: the label order of synthetic graphs depends on the seed
+    train += ["--labels", "super_class", "--methods", "gnn", "--seeds", "0"]
+    train += ["--variants", "density", "--epochs", "3", "--out", models]
+    subprocess.run(train, check=True, cwd=ROOT)
+    run = [sys.executable, str(ROOT / "experiments/b_gnn_celltypes/label_free.py"), "--synthetic"]
+    run += ["--models", models, "--labels", "super_class", "--out", "pytest_label_free"]
+    subprocess.run(run, check=True, cwd=ROOT)
+    out = ROOT / "results" / "pytest_label_free" / "super_class"
+    sel = json.loads((out / "selected.json").read_text())
+    assert {"chosen", "selected_acc", "refined_acc", "no_adaptation_acc"} <= set(sel)
+    assert len(pd.read_csv(out / "candidates.csv")) == 2 * 5  # 2 normalizations x 5 rho
