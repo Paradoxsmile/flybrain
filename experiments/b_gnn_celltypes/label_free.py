@@ -78,7 +78,7 @@ def run_label(label: str, args, out_dir) -> dict:
 
     rows, preds = [], {}  # preds[(variant, norm, rho)] = [seed predictions]
     for variant, norm in itertools.product(variants, NORMS):
-        adjusted = {rho: [] for rho in RHOS}
+        seed_probs, seed_weights = [], []  # float32 probabilities and prior weights per seed
         for path in models:
             model, cfg, names = load_model(path)
             assert names == src.label_names == graphs[variant].label_names
@@ -91,13 +91,18 @@ def run_label(label: str, args, out_dir) -> dict:
                 else normalize_features(tgt.x, "global", fit_mask=train, reference=src.x)
             )
             p = probabilities(model, cfg, tgt, x)
-            v = prior_weights(p, ref.mean(axis=0) * len(p))
-            for rho in RHOS:
-                q = p * v**rho
-                adjusted[rho].append(q / q.sum(axis=1, keepdims=True))
+            seed_weights.append(prior_weights(p, ref.mean(axis=0) * len(p)))
+            seed_probs.append(p.astype(np.float32))
         for rho in RHOS:
-            ensemble = np.mean(adjusted[rho], axis=0).argmax(axis=1)
-            seed_preds = [a.argmax(axis=1) for a in adjusted[rho]]
+            total = np.zeros_like(seed_probs[0])
+            seed_preds = []
+            for p, v in zip(seed_probs, seed_weights, strict=True):
+                q = p * (v**rho).astype(np.float32)
+                q /= q.sum(axis=1, keepdims=True)
+                total += q
+                seed_preds.append(q.argmax(axis=1))
+            ensemble = total.argmax(axis=1)
+            del total
             preds[(variant, norm, rho)] = seed_preds
             row = {"variant": variant, "norm": norm, "rho": rho}
             for name, g in graphs.items():
@@ -112,7 +117,6 @@ def run_label(label: str, args, out_dir) -> dict:
             )
             rows.append(row)
             print(f"[label_free] {label} {row}", flush=True)
-            adjusted[rho] = None  # free memory
 
     cand = pd.DataFrame(rows)
     key = f"consistency_{SCORING if SCORING in graphs else variants[0]}"
