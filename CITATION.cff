@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below. Please also cite the FlyWire / FAFB data and the cell-type annotations it builds on."
+title: "flybrain: ML on the Drosophila connectome"
+abstract: >-
+  Graph neural networks on the FlyWire (FAFB v783) whole-brain connectome of
+  Drosophila. A GNN that sees only anonymous wiring structure predicts super
+  classes and 434 cell types, compared with baselines that use the labels of
+  synaptic partners, including a test on an unlabeled brain hemisphere.
+authors:
+  - family-names: Vogt
+    given-names: Maximilian
+repository-code: "https://github.com/Paradoxsmile/flybrain"
+license: MIT
+keywords:
+  - connectomics
+  - Drosophila
+  - FlyWire
+  - graph neural networks
+  - cell types
