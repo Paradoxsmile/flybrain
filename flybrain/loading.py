@@ -137,7 +137,8 @@ def build_graph(
     `label_names`, labels are coded in that label space instead (see encode_labels).
 
     Attributes: x (degree features), edge_index, edge_weight, y, node_ids, label_names, and
-    side (array of "left" / "right" / "center" / "", if the neurons table has a side column).
+    side (array of "left" / "right" / "center" / "", if the neurons table has a side column);
+    flywire_types (MCNS), region and morph_type (BANC) likewise, as string arrays.
     """
     neurons, connections = clean_tables(neurons, connections)
     index = pd.Series(np.arange(len(neurons)), index=neurons[ID_COL])
@@ -157,7 +158,7 @@ def build_graph(
     )
     data.node_ids = torch.from_numpy(neurons[ID_COL].to_numpy().copy())
     data.label_names = names
-    for col in ("side", "flywire_types"):  # flywire_types: MCNS only, may list several types
+    for col in ("side", "flywire_types", "region", "morph_type"):
         if col in neurons.columns:
             setattr(data, col, neurons[col].astype("string").fillna("").to_numpy(dtype=str))
     return data
@@ -172,16 +173,19 @@ def load_graph(
     min_class_size: int = 1,
     dataset: str = "fafb",
     mcns_variant: str = "density",
+    banc_variant: str = "raw",
 ) -> Data:
     """Load the real graph (raw -> Parquet cache -> Data), or a synthetic one if requested.
 
     dataset="mcns" loads the male CNS brain (flybrain.mcns, preprocessing `mcns_variant`) with
     its labels coded in the FAFB label space (FAFB classes with >= min_class_size neurons), so
-    class indices mean the same in both graphs. With synthetic=True, a second synthetic graph
-    stands in for MCNS.
+    class indices mean the same in both graphs; dataset="banc" likewise loads the BANC brain
+    (flybrain.banc, preprocessing `banc_variant`). With synthetic=True, other synthetic graphs
+    stand in for MCNS and BANC.
     """
-    if dataset not in ("fafb", "mcns"):
-        raise ValueError(f"dataset must be 'fafb' or 'mcns', got {dataset!r}")
+    offsets = {"fafb": 0, "mcns": 1000, "banc": 2000}  # synthetic stand-ins
+    if dataset not in offsets:
+        raise ValueError(f"dataset must be one of {sorted(offsets)}, got {dataset!r}")
     if synthetic:
         from flybrain.synthetic import make_synthetic_tables
 
@@ -189,12 +193,18 @@ def load_graph(
         if dataset == "fafb":
             return build_graph(*fafb, label_col, min_class_size)
         names = encode_labels(fafb[0][label_col], min_class_size)[1]
-        return build_graph(*make_synthetic_tables(seed=seed + 1000), label_col, 1, names)
+        other = make_synthetic_tables(seed=seed + offsets[dataset])
+        return build_graph(*other, label_col, 1, names)
     fafb_neurons, connections = load_tables(raw_dir, processed_dir)
     if dataset == "fafb":
         return build_graph(fafb_neurons, connections, label_col, min_class_size)
-    from flybrain.mcns import load_mcns_tables
-
     names = encode_labels(fafb_neurons[label_col], min_class_size)[1]
-    neurons, connections = load_mcns_tables(mcns_variant, raw_dir / "mcns", processed_dir)
+    if dataset == "mcns":
+        from flybrain.mcns import load_mcns_tables
+
+        neurons, connections = load_mcns_tables(mcns_variant, raw_dir / "mcns", processed_dir)
+    else:
+        from flybrain.banc import load_banc_tables
+
+        neurons, connections = load_banc_tables(banc_variant, raw_dir / "banc", processed_dir)
     return build_graph(neurons, connections, label_col, 1, names)

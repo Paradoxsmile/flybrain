@@ -1,27 +1,31 @@
-"""Label-free mapping of cell types between FAFB and the MCNS brain, every choice without target
+"""Label-free mapping of cell types from one connectome to another, every choice without target
 labels.
 
 Per label, with the GNNs saved by transfer.py (model.pt, one per seed):
-1. Class probabilities on the source graph and, for every candidate preprocessing (MCNS alignment
-   variant x feature normalization, see transfer.py), on the target graph.
+1. Class probabilities on the source graph and, for every candidate preprocessing (alignment
+   variant of the source and of the target x feature normalization, see transfer.py), on the
+   target graph.
 2. Prior matching (flybrain.adapt): predicted type sizes on the target are pulled towards the
    type sizes the same GNN predicts on its source (scaled to the target), with strength rho.
 3. Selection: the candidate (variant, normalization, rho) whose ensemble labeling (mean of the
    seeds' adjusted probabilities) has the highest type consistency (flybrain.consistency) on the
-   scoring graph is chosen.
+   scoring graph, the least preprocessed target graph (`raw` for MCNS and BANC), is chosen.
 4. Refinement: NTAC on the chosen target graph, seeded where all seeds agree.
 Target labels are only used to report accuracy.
 
---direction forward (default): GNNs trained on FAFB (--models, one directory); the MCNS target is
-  built in each alignment variant; scoring graph: the least preprocessed MCNS graph (`raw`), with
-  consistency on the other two graphs reported to show whether the choice depends on it.
---direction reverse: GNNs trained on MCNS, one directory per alignment variant
-  (<models>_<variant>, from transfer.py --source mcns); target and scoring graph: FAFB.
+--source fafb: GNNs trained on FAFB (--models, one directory). --source mcns: GNNs trained on
+MCNS, one directory per MCNS alignment variant (<models>_<variant>, from transfer.py --source
+mcns). --target mcns | banc: built in each of its alignment variants; --target fafb: one graph.
+With --score-all, consistency is also reported on the other target graphs, to show whether the
+choice depends on the scoring graph. For BANC targets, accuracy is also reported per region and,
+for cell types, against the morphology-matched FAFB type in the central brain
+(docs/banc_protocol.md).
 
 Writes results/<out>/<label>/candidates.csv, selected.json, predictions.parquet and summary.md.
 
-Usage: python experiments/b_gnn_celltypes/label_free.py [--models transfer2] [--labels cell_type]
-       python experiments/b_gnn_celltypes/label_free.py --direction reverse --models transfer_rev
+Usage: python experiments/b_gnn_celltypes/label_free.py [--models transfer2] [--score-all]
+       python experiments/b_gnn_celltypes/label_free.py --source mcns --target fafb
+       python experiments/b_gnn_celltypes/label_free.py --target banc
 """
 
 from __future__ import annotations
@@ -36,10 +40,11 @@ import torch
 from sklearn.metrics import f1_score
 
 from flybrain.adapt import prior_weights
+from flybrain.banc import VARIANTS as BANC_VARIANTS
 from flybrain.consistency import type_consistency
 from flybrain.features import normalize_features
-from flybrain.loading import load_graph
-from flybrain.mcns import VARIANTS
+from flybrain.loading import encode_labels, load_graph
+from flybrain.mcns import VARIANTS as MCNS_VARIANTS
 from flybrain.ntac import ntac_from_predictions
 from flybrain.splits import make_split
 from flybrain.training import graph_inputs, load_model
@@ -48,7 +53,10 @@ from flybrain.utils import REPO_ROOT, write_predictions
 LABELS = {"super_class": 1, "cell_type": 20}  # min_class_size, as in the configs
 NORMS = ("target", "source")
 RHOS = (0.0, 0.25, 0.5, 0.75, 1.0)
-SCORING = "raw"  # forward direction: least preprocessed MCNS graph
+DATASET_VARIANTS = {"fafb": [None], "mcns": list(MCNS_VARIANTS), "banc": list(BANC_VARIANTS)}
+SCORING = {"fafb": "fafb", "mcns": "raw", "banc": "raw"}  # least preprocessed target graph
+DEFAULT_MODELS = {"fafb": "transfer2", "mcns": "transfer_rev"}
+DEFAULT_OUT = {("fafb", "mcns"): "label_free", ("mcns", "fafb"): "label_free_rev"}
 
 
 def model_paths(models: str, label: str) -> list:
@@ -58,31 +66,44 @@ def model_paths(models: str, label: str) -> list:
     return paths
 
 
+def variants(dataset: str, synthetic: bool) -> list:
+    if dataset == "fafb":
+        return [None]
+    return ["synthetic"] if synthetic else DATASET_VARIANTS[dataset]
+
+
+def load(dataset: str, label: str, variant, synthetic: bool):
+    extra = {}
+    if dataset != "fafb":  # synthetic graphs ignore the variant
+        extra[f"{dataset}_variant"] = DATASET_VARIANTS[dataset][0] if synthetic else variant
+    return load_graph(
+        label, synthetic=synthetic, min_class_size=LABELS[label], dataset=dataset, **extra
+    )
+
+
 def setups(label: str, args):
-    """[(variant, model paths, source graph, target graph)], graphs to score on, scoring key."""
-    msize = LABELS[label]
-    variants = ["synthetic"] if args.synthetic else list(VARIANTS)
+    """[(name, model paths, source graph, target graph)], graphs to score on, scoring key.
 
-    def mcns(v):
-        return load_graph(
-            label,
-            synthetic=args.synthetic,
-            min_class_size=msize,
-            dataset="mcns",
-            mcns_variant="density" if args.synthetic else v,
-        )
-
-    fafb = load_graph(label, synthetic=args.synthetic, min_class_size=msize)
-    if args.direction == "forward":
-        paths = model_paths(args.models, label)
-        graphs = {v: mcns(v) for v in variants}
-        scoring = variants[0] if args.synthetic else SCORING
-        return [(v, paths, fafb, graphs[v]) for v in variants], graphs, scoring
+    name is the target variant for a FAFB source, the source variant for a FAFB target and
+    "<source variant>/<target variant>" otherwise."""
+    tvs = variants(args.target, args.synthetic)
+    targets = {tv or args.target: load(args.target, label, tv, args.synthetic) for tv in tvs}
     cases = []
-    for v in variants:
-        paths = model_paths(args.models if args.synthetic else f"{args.models}_{v}", label)
-        cases.append((v, paths, mcns(v), fafb))
-    return cases, {"fafb": fafb}, "fafb"
+    for sv in variants(args.source, args.synthetic):
+        suffixed = sv is not None and not args.synthetic
+        paths = model_paths(f"{args.models}_{sv}" if suffixed else args.models, label)
+        src = load(args.source, label, sv, args.synthetic)
+        for tkey, tgt in targets.items():
+            if sv is None:
+                name = tkey
+            elif args.target == "fafb":
+                name = sv
+            else:
+                name = f"{sv}/{tkey}"
+            cases.append((name, paths, src, tgt))
+    scoring = next(iter(targets)) if args.synthetic else SCORING[args.target]
+    graphs = targets if args.score_all else {scoring: targets[scoring]}
+    return cases, graphs, scoring
 
 
 @torch.no_grad()
@@ -96,15 +117,38 @@ def score(pred, y) -> tuple[float, float]:
     return float((pred[lab] == y[lab]).mean()), float(f1_score(y[lab], pred[lab], average="macro"))
 
 
+def breakdown(g, pred, label: str) -> dict:
+    """Accuracy per region and, for cell types, against the morphology-matched type (BANC)."""
+    out = {}
+    y = g.y.numpy()
+    for region in sorted(set(getattr(g, "region", [])) - {""}):
+        mask = (g.region == region) & (y >= 0)
+        if not mask.any():
+            continue
+        out[f"{region}_n"] = int(mask.sum())
+        out[f"{region}_acc"], out[f"{region}_macro_f1"] = score(pred[mask], y[mask])
+    if label == "cell_type" and getattr(g, "morph_type", None) is not None:
+        morph = encode_labels(pd.Series(g.morph_type).replace("", pd.NA), label_names=g.label_names)
+        morph = morph[0]
+        if not (morph >= 0).any():
+            return out
+        out["morph_n"] = int((morph >= 0).sum())
+        out["morph_acc"], out["morph_macro_f1"] = score(pred, morph)
+        both = (morph >= 0) & (y >= 0)
+        out["morph_agrees_with_label"] = float((morph[both] == y[both]).mean())
+    return out
+
+
 def run_label(label: str, args, out_dir) -> dict:
     cases, graphs, scoring_key = setups(label, args)
-    targets = {variant: tgt for variant, _, _, tgt in cases}
+    targets = {name: tgt for name, _, _, tgt in cases}
     y = graphs[scoring_key].y.numpy()
     k = len(cases[0][2].label_names)
     used_models = sorted({str(m) for _, paths, _, _ in cases for m in paths})
 
-    rows, preds = [], {}  # preds[(variant, norm, rho)] = [seed predictions]
-    for (variant, paths, src, tgt), norm in itertools.product(cases, NORMS):
+    rows, preds, ensembles = [], {}, {}  # keyed by (name, norm, rho)
+    for (name, paths, src, tgt), norm in itertools.product(cases, NORMS):
+        assert tgt.num_nodes == len(y)
         seed_probs, seed_weights = [], []  # float32 probabilities and prior weights per seed
         for path in paths:
             model, cfg, names = load_model(path)
@@ -129,10 +173,11 @@ def run_label(label: str, args, out_dir) -> dict:
                 seed_preds.append(q.argmax(axis=1))
             ensemble = total.argmax(axis=1)
             del total
-            preds[(variant, norm, rho)] = seed_preds
-            row = {"variant": variant, "norm": norm, "rho": rho}
-            for name, g in graphs.items():
-                row[f"consistency_{name}"] = type_consistency(
+            preds[(name, norm, rho)] = seed_preds
+            ensembles[(name, norm, rho)] = ensemble
+            row = {"variant": name, "norm": norm, "rho": rho}
+            for gname, g in graphs.items():
+                row[f"consistency_{gname}"] = type_consistency(
                     g.edge_index, g.edge_weight, ensemble, k
                 )[0]
             row["acc"], row["macro_f1"] = score(ensemble, y)
@@ -147,6 +192,7 @@ def run_label(label: str, args, out_dir) -> dict:
     cand = pd.DataFrame(rows)
     best = cand.loc[cand[f"consistency_{scoring_key}"].idxmax()]
     chosen = (best.variant, best.norm, float(best.rho))
+    post_hoc = cand.loc[cand.acc.idxmax()]
     other_choices = {
         c: tuple(cand.loc[cand[c].idxmax(), ["variant", "norm", "rho"]])
         for c in cand.columns
@@ -159,23 +205,31 @@ def run_label(label: str, args, out_dir) -> dict:
     refined, seeds = ntac_from_predictions(
         g.edge_index, g.edge_weight, np.full(g.num_nodes, -1), seed_preds, k
     )
+    unadapted = (chosen[0], chosen[1], 0.0)
     sel = {
         "label": label,
-        "direction": args.direction,
+        "source": args.source,
+        "target": args.target,
         "models": used_models,
         "chosen": {"variant": chosen[0], "norm": chosen[1], "rho": chosen[2]},
         "choice_by_scoring_graph": {c: list(v) for c, v in other_choices.items()},
         "selected_acc": float(best.acc),
         "selected_macro_f1": float(best.macro_f1),
-        "best_possible_acc": float(cand.acc.max()),
-        "no_adaptation_acc": float(
-            cand[(cand.variant == chosen[0]) & (cand.norm == chosen[1]) & (cand.rho == 0)].acc.iloc[
-                0
-            ]
-        ),
+        "best_possible_acc": float(post_hoc.acc),
+        "best_possible": [post_hoc.variant, post_hoc.norm, float(post_hoc.rho)],
+        "no_adaptation_acc": float(cand.set_index(["variant", "norm", "rho"]).acc[unadapted]),
         "seed_share": float(seeds.mean()),
     }
     sel["refined_acc"], sel["refined_macro_f1"] = score(refined, y)
+    labelings = {
+        "no_adaptation": ensembles[unadapted],
+        "selected": ensembles[chosen],
+        "refined": refined,
+        "best_possible": ensembles[tuple(sel["best_possible"])],
+    }
+    parts = {key: breakdown(g, pred, label) for key, pred in labelings.items()}
+    if any(parts.values()):
+        sel["breakdown"] = parts
     d = out_dir / label
     d.mkdir(parents=True, exist_ok=True)
     cand.to_csv(d / "candidates.csv", index=False)
@@ -187,20 +241,8 @@ def run_label(label: str, args, out_dir) -> dict:
     return sel
 
 
-def main() -> None:
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--direction", default="forward", choices=["forward", "reverse"])
-    p.add_argument("--models", default=None, help="results subdirectory (prefix for reverse)")
-    p.add_argument("--labels", nargs="+", default=list(LABELS), choices=list(LABELS))
-    p.add_argument("--synthetic", action="store_true", help="synthetic stand-ins (for tests)")
-    p.add_argument("--out", default=None, help="default: label_free[_rev]")
-    args = p.parse_args()
-    reverse = args.direction == "reverse"
-    args.models = args.models or ("transfer_rev" if reverse else "transfer2")
-    args.out = args.out or ("label_free_rev" if reverse else "label_free")
-    out_dir = REPO_ROOT / "results" / args.out
-    sels = [run_label(label, args, out_dir) for label in args.labels]
-    pair = "MCNS -> FAFB" if reverse else "FAFB -> MCNS"
+def summary_lines(sels: list, source: str, target: str) -> list:
+    pair = f"{source.upper()} -> {target.upper()}"
     lines = [f"Label-free {pair} mapping (accuracy % / macro-F1 on labeled target neurons).", ""]
     header = ["label", "chosen (variant, norm., rho)", "no adaptation", "prior matched", "+ NTAC"]
     header += ["best candidate (post hoc)"]
@@ -213,6 +255,36 @@ def main() -> None:
         cells += [f"**{100 * s['refined_acc']:.1f} / {s['refined_macro_f1']:.2f}**"]
         cells += [f"{100 * s['best_possible_acc']:.1f}"]
         lines.append("| " + " | ".join(cells) + " |")
+    for s in sels:
+        if "breakdown" not in s:
+            continue
+        lines += ["", f"{s['label']}, accuracy % by subset (n labeled neurons):", ""]
+        keys = [k[: -len("_acc")] for k in s["breakdown"]["refined"] if k.endswith("_acc")]
+        lines += ["| labeling | " + " | ".join(keys) + " |", "|---" * (len(keys) + 1) + "|"]
+        for name, part in s["breakdown"].items():
+            cells = [f"{100 * part[f'{k}_acc']:.1f} ({part[f'{k}_n']})" for k in keys]
+            lines.append(f"| {name} | " + " | ".join(cells) + " |")
+    return lines
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--source", default="fafb", choices=["fafb", "mcns"])
+    p.add_argument("--target", default="mcns", choices=["mcns", "fafb", "banc"])
+    p.add_argument("--models", default=None, help="results subdirectory (prefix for MCNS)")
+    p.add_argument("--labels", nargs="+", default=list(LABELS), choices=list(LABELS))
+    p.add_argument("--score-all", action="store_true", help="consistency on all target graphs")
+    p.add_argument("--synthetic", action="store_true", help="synthetic stand-ins (for tests)")
+    p.add_argument("--out", default=None, help="default: label_free[_rev | _<source>_<target>]")
+    args = p.parse_args()
+    if args.source == args.target:
+        p.error("source and target must differ")
+    args.models = args.models or DEFAULT_MODELS[args.source]
+    pair = (args.source, args.target)
+    args.out = args.out or DEFAULT_OUT.get(pair, f"label_free_{args.source}_{args.target}")
+    out_dir = REPO_ROOT / "results" / args.out
+    sels = [run_label(label, args, out_dir) for label in args.labels]
+    lines = summary_lines(sels, args.source, args.target)
     (out_dir / "summary.md").write_text("\n".join(lines), encoding="utf-8")
     print("\n".join(lines))
 

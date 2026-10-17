@@ -31,10 +31,21 @@ Download two files from the public Janelia bucket (CC-BY; see https://male-cns.j
 
 Base URL: `https://storage.googleapis.com/flyem-male-cns/v1.0/connectome-data/flat-connectome/`. On first use, `flybrain/mcns.py` reduces them to the traced brain neurons and their connections with >= 5 synapses and caches `data/processed/mcns_neurons.parquet` and `mcns_connections.parquet` (about 29 MB together). The cache is enough to run the experiments elsewhere (e.g. on Kaggle) without the raw files.
 
+## BANC (v888, optional, for the independent transfer test)
+
+Download two files from the public BANC bucket (CC BY 4.0; see https://github.com/htem/BANC-project) into `data/raw/banc/`:
+
+| File | Content | Size |
+|---|---|---|
+| `banc_888_meta.feather` | per-neuron metadata (`proofread`, `region`, `super_class`, `cell_type`, `fafb_cell_type`, `side`, ...) | 58 MB |
+| `banc_888_edgelist_simple_v2.feather` | `pre`, `post`, `count` (v2 synapses, as in the BANC paper) | 305 MB |
+
+Base URL: `https://storage.googleapis.com/lee-lab_brain-and-nerve-cord-fly-connectome/compiled_data/banc_888/`. On first use, `flybrain/banc.py` reduces them to the proofread brain neurons and their connections with >= 2 synapses and caches `data/processed/banc_neurons.parquet` and `banc_connections.parquet` (about 17 MB together). The evaluation protocol is fixed in [docs/banc_protocol.md](../docs/banc_protocol.md).
+
 ## Processed cache
 
 On first use, `flybrain.loading` cleans the tables (dedupes neurons, sums synapses per pre/post pair, drops unknown ids) and writes `data/processed/neurons.parquet` and `data/processed/connections.parquet`. Delete that folder to rebuild after changing raw files.
 
 ## Licenses
 
-FlyWire and MCNS data are released under CC-BY; cite the original publications and keep the attribution when redistributing derived data. Check the license terms of the exact release you use.
+FlyWire, MCNS and BANC data are released under CC-BY; cite the original publications and keep the attribution when redistributing derived data. Check the license terms of the exact release you use.
