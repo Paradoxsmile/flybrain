@@ -7,7 +7,7 @@
 
 Machine learning on the *Drosophila* connectome: how much of a neuron's identity is encoded in its wiring alone, and what does connectome-constrained modelling of the fly visual system tell us about the role of wiring?
 
-> Status: part b has results on FlyWire (FAFB v783), including a cross-hemisphere test, a replication within the male CNS (MCNS v1.0) and a fully label-free FAFB → MCNS transfer (92.6 % over 394 cell types). Part c is open.
+> Status: part b has results on FlyWire (FAFB v783), including a cross-hemisphere test, a replication within the male CNS (MCNS v1.0) and a fully label-free FAFB → MCNS transfer (92.6 % over 394 cell types; 83.4 % when run unchanged from MCNS to FAFB). Part c is open.
 
 ## Motivation
 
@@ -31,9 +31,9 @@ FlyWire (FAFB) and MCNS data are released under CC-BY. Raw files are **not** in 
 - **Splits:** `random` (stratified 70 / 15 / 15) and `left_right` / `right_left` (train and validate on one hemisphere, test on the other).
 - **Model selection:** hyperparameters and the training epoch are chosen by validation macro-F1; the test set is only used for the final numbers.
 - **Male CNS** (`flybrain/mcns.py`): the traced brain neurons of MCNS v1.0 (no ventral nerve cord), with MCNS superclasses mapped to the FAFB super classes and `flywireType` to FAFB cell types (394 of the 434 types occur; entries listing several types are left out). MCNS detects more synapses per connection, so its graph is built in three alignments: `density` (>= 7 synapses, about FAFB's number of connections, counts × 0.581 as in Janelia's FlyWire comparison), `raw` (FAFB's threshold of 5, no scaling) and `janelia` (counts × 0.581, then threshold 5).
-- **Transfer** (`transfer.py`): methods are trained on FAFB as in the benchmark and applied to MCNS without any MCNS label, with features normalized by FAFB statistics (`source`) or by MCNS's own (`target`).
+- **Transfer** (`transfer.py`): methods are trained on FAFB as in the benchmark and applied to MCNS without any MCNS label, with features normalized by FAFB statistics (`source`) or by MCNS's own (`target`). `--source mcns` trains on MCNS (one alignment per run) and applies to FAFB.
 - **GNN-seeded NTAC** (`hybrid.py`): neurons on which three GNNs (seeds) agree become NTAC seeds, together with any truly known labels; NTAC labels the rest. Nothing is tuned (unanimous predictions; NTAC defaults: 15 steps, learning rate 0.3).
-- **Label-free transfer** (`label_free.py`): every transfer choice is made without MCNS labels. Type sizes are matched to the reference (`flybrain/adapt.py`), and the alignment, normalization and matching strength are chosen by a label-free type-consistency score (`flybrain/consistency.py`); see below.
+- **Label-free transfer** (`label_free.py`): every transfer choice is made without labels of the target connectome. Type sizes are matched to the reference (`flybrain/adapt.py`), and the alignment, normalization and matching strength are chosen by a label-free type-consistency score (`flybrain/consistency.py`); see below. `--direction reverse` runs the same pipeline from MCNS to FAFB.
 - **Benchmark:** `benchmark.py` runs every method on every label and split for three seeds and writes `results/benchmark/summary.md` (`--dataset mcns`: the same within MCNS). All runs log config, metrics and per-neuron predictions to `results/<run_name>/`.
 - **Part c:** plan only, see [experiments/c_constrained_rnn](experiments/c_constrained_rnn/README.md).
 
@@ -141,16 +141,24 @@ Two observations make every transfer choice possible without MCNS labels (`label
 1. **A labeling can be scored by how well it explains the wiring.** Cell types are defined by connectivity: neurons of a type have similar numbers of synapses to and from each type (Matsliah et al., 2024). The type-consistency score (`flybrain/consistency.py`) gives each neuron of a random half the label of its most similar neuron in the other half (synapses per partner type, weighted Jaccard as in NTAC) and measures the chance-corrected agreement (Cohen's kappa). It needs no labels, and across the 30 candidate labelings per label below it ranks them like their true accuracy (Spearman 0.95–0.97 for cell types, 0.86–0.95 for super classes, depending on the scoring graph).
 2. **Cell-type sizes are stereotyped across flies.** The transferred GNN shifts neurons between neighboring types, so some types are over-filled and others almost empty (T5a: 2,252 predicted vs. 1,664 true neurons; LC21: 13 vs. 153). Rescaling its class probabilities so that the predicted type sizes match the sizes it predicts on FAFB (Sinkhorn scaling, `flybrain/adapt.py`, strength rho) corrects this.
 
-The pipeline scores every combination of alignment (3), normalization (2) and rho (0, 0.25, 0.5, 0.75, 1) by type consistency on the least preprocessed MCNS graph (`raw`), keeps the best, and refines it with NTAC seeded where all three GNNs agree. MCNS labels are used only to report accuracy:
+The pipeline scores every combination of alignment (3), normalization (2) and rho (0, 0.25, 0.5, 0.75, 1) by type consistency on the target graph (for MCNS the least preprocessed one, `raw`), keeps the best, and refines it with NTAC seeded where all three GNNs agree. Target labels are used only to report accuracy:
 
-| Label | Chosen (alignment, norm., rho) | Without prior matching | With prior matching | **+ NTAC** | Best of the 30 candidates (post hoc) | Trained within MCNS (with labels) |
+| Direction, label | Chosen (alignment, norm., rho) | Without prior matching | With prior matching | **+ NTAC** | Best of the 30 candidates (post hoc) | Trained within the target (with labels) |
 |---|---|---|---|---|---|---|
-| cell types | `raw`, source, 0.5 | 87.6 / 0.68 | 91.2 / 0.75 | **92.6 / 0.76** | 91.4 | 96.6 / 0.95 |
-| super classes | `raw`, source, 0.25 | 96.2 / 0.68 | 96.3 / 0.68 | 96.2 / 0.65 | 96.3 | 98.4 / 0.88 |
+| FAFB → MCNS, cell types | `raw`, source, 0.5 | 87.6 / 0.68 | 91.2 / 0.75 | **92.6 / 0.76** | 91.4 | 96.6 / 0.95 |
+| FAFB → MCNS, super classes | `raw`, source, 0.25 | 96.2 / 0.68 | 96.3 / 0.68 | 96.2 / 0.65 | 96.3 | 98.4 / 0.88 |
+| MCNS → FAFB, cell types | `density`, target, 0.75 | 72.0 / 0.57 | 81.3 / 0.68 | **83.4 / 0.69** | 82.9 | 95.2 / 0.93 |
+| MCNS → FAFB, super classes | `raw`, source, 0 | 95.2 / 0.66 | 95.2 / 0.66 | **95.5 / 0.67** | 95.2 | 97.8 / 0.84 |
 
 - **Without a single label in the male brain, 92.6 % of its neurons get the right cell type out of 394**, within 4 points of a model trained on male labels. The single GNN with a label-free normalization reached 73–75 %.
 - The consistency score picks a candidate within 0.2 points of the best one, and all three scoring graphs pick the same one.
 - Prior matching fixes the types the raw transfer over- or under-filled (seed 0, `raw`/source, before → after the pipeline): T5a 2,252 → 1,714 predicted neurons (1,664 true), F1 0.84 → 0.98; LC21 13 → 115 (153 true), F1 0.16 → 0.86. By region, the neuron-weighted F1 rises from 0.40 to 0.61 in the central brain and from 0.83 to 0.96 for visual projection neurons. Kenyon cell subtypes (KCab vs. KCg-m) and some olfactory receptor neuron types stay hard.
+
+**Check in the reverse direction.** The pipeline was developed on FAFB → MCNS. Run unchanged from MCNS to FAFB (GNNs trained on MCNS in each alignment with `transfer.py --source mcns`, then `label_free.py --direction reverse`):
+
+- **Both label-free components carry over.** Prior matching helps in all six alignment × normalization combinations (best rho 0.5–1 in each; +9.3 points for the chosen one), and the consistency score again ranks the 30 labelings like their accuracy (Spearman 0.87 for cell types, 0.80 for super classes). Its choice is 1.6 points below the best candidate (0.2 in the forward direction) and above every candidate without prior matching (at most 78.5 %). The single GNN with a label-free normalization reaches 60–74 %.
+- **The level is lower:** 83.4 % vs. 95.2 % within FAFB, a gap of 12 points (forward: 4). Three error sources are specific to FAFB as the target. 2.2 % of its neurons belong to the 40 types missing from MCNS's mapping (Dm8a/b, ocellar retinula cells, several Johnston's organ types) and cannot be predicted; on the 394 shared types accuracy is 85.3 % (macro-F1 0.78). Photoreceptors (R1-6, R7, R8; 10 % of the neurons) cause 21 % of the errors: 51 % of them are typed correctly in the left FAFB hemisphere and 83 % in the right, the neurons that also make FAFB right → left typing 8 points worse (in the forward direction, 95.6 % of MCNS photoreceptors are correct). Kenyon cell subtypes cause 15 % (1,606 KCg-m predicted as KCab), the confusion that also remains in the forward direction. On shared types without photoreceptors, 87.5 % are correct.
+- Super classes: the score picks the best candidate and, as in the forward direction, no prior matching (rho 0).
 
 ### GNN-seeded NTAC: combining both
 
@@ -176,7 +184,7 @@ Related work and how this project relates to it: [docs/literature.md](docs/liter
 - Only types with ≥ 20 neurons are predicted (434 of 8,772 types); the many rare types are left out.
 - The setting is transductive: the whole graph is visible during training, only the labels of validation and test neurons are hidden.
 - Two animals of different sex, reconstructed and annotated by different teams. MCNS labels come from Janelia's `flywireType` mapping; 40 of the 434 FAFB types do not occur in it (some are split differently, e.g. Dm8a/b vs. yDm8/pDm8), and 2,751 neurons with several mapped types are not scored (a prediction falls within their type list for only 3–4 % of them).
-- The label-free pipeline (type-consistency selection, prior matching) was developed on the FAFB → MCNS pair while looking at its transfer errors; its settings are label-free, but an independent check is still open, e.g. running it unchanged in the reverse direction (MCNS → FAFB).
+- The label-free pipeline (type-consistency selection, prior matching) was developed on the FAFB → MCNS pair while looking at its transfer errors. Run unchanged in the reverse direction it still helps (83.4 % on cell types vs. at most 78.5 % without prior matching), but both directions use the same two connectomes; a third one (e.g. BANC) would be the independent test.
 - Prior matching assumes that type sizes are similar across flies; sex-specific and dimorphic types (about 5 % of the central brain) violate this.
 - Each seed changes both the data split and the initialization; the std covers both.
 - The cell-type GNN is trained for 300 epochs and its best epoch is close to the end, so it may be slightly underestimated.
