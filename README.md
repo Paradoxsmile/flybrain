@@ -7,7 +7,7 @@
 
 Machine learning on the *Drosophila* connectome: how much of a neuron's identity is encoded in its wiring alone, and what does connectome-constrained modelling of the fly visual system tell us about the role of wiring?
 
-> Status: part b has results on FlyWire (FAFB v783), including a cross-hemisphere test, a replication within the male CNS (MCNS v1.0) and a fully label-free FAFB → MCNS transfer (92.6 % over 394 cell types; 83.4 % when run unchanged from MCNS to FAFB). Part c is open.
+> Status: part b has results on FlyWire (FAFB v783), including a cross-hemisphere test, a replication within the male CNS (MCNS v1.0) and a fully label-free FAFB → MCNS transfer (92.6 % over 394 cell types; 83.4 % when run unchanged from MCNS to FAFB), and an independent test on a third connectome (BANC) with a protocol fixed in advance, where part of the pipeline did not hold up. Part c is open.
 
 ## Motivation
 
@@ -160,6 +160,29 @@ The pipeline scores every combination of alignment (3), normalization (2) and rh
 - **The level is lower:** 83.4 % vs. 95.2 % within FAFB, a gap of 12 points (forward: 4). Three error sources are specific to FAFB as the target. 2.2 % of its neurons belong to the 40 types missing from MCNS's mapping (Dm8a/b, ocellar retinula cells, several Johnston's organ types) and cannot be predicted; on the 394 shared types accuracy is 85.3 % (macro-F1 0.78). Photoreceptors (R1-6, R7, R8; 10 % of the neurons) cause 21 % of the errors: 51 % of them are typed correctly in the left FAFB hemisphere and 83 % in the right, the neurons that also make FAFB right → left typing 8 points worse (in the forward direction, 95.6 % of MCNS photoreceptors are correct). Kenyon cell subtypes cause 15 % (1,606 KCg-m predicted as KCab), the confusion that also remains in the forward direction. On shared types without photoreceptors, 87.5 % are correct.
 - Super classes: the score picks the best candidate and, as in the forward direction, no prior matching (rho 0).
 
+### Independent test on BANC, with a protocol fixed in advance
+
+BANC v888 (Bates et al., 2026) is a third connectome that played no part in developing the pipeline: an independently reconstructed female brain and nerve cord. Data, labels, runs, reported numbers and three expectations were committed in [docs/banc_protocol.md](docs/banc_protocol.md) (`85516a2`) before any model was run on BANC. The GNNs already trained on FAFB and MCNS were applied unchanged (`label_free.py --target banc`, `--source mcns --target banc`); nothing was trained on BANC. Two caveats come from the data. BANC's cell types were assigned by an alignment to FAFB that uses connectivity (reference A below), so the cleanest test is the central brain against the type of the FAFB neuron matched by morphology (reference B, 11,656 neurons, 159 types). And BANC's brain graph is much sparser: the median neuron has 30 input synapses from other neurons in the graph (FAFB: 152) and 4 input partners (FAFB: 14).
+
+| Run, label | Chosen (alignment, norm., rho) | Without prior matching | With prior matching | **+ NTAC** | Best candidate (post hoc) |
+|---|---|---|---|---|---|
+| FAFB → BANC, cell types | `density`, target, 1 | 38.2 / 0.21 | 55.7 / 0.37 | **61.7 / 0.40** | 55.7 |
+| FAFB → BANC, super classes | `scaled`, source, 1 | 42.2 / 0.11 | 72.3 / 0.24 | **73.3 / 0.22** | 92.6 |
+| MCNS → BANC, cell types | `density`/`scaled`, source, 0 | 1.4 / 0.00 | 1.4 / 0.00 | **1.4 / 0.00** | 58.0 |
+| MCNS → BANC, super classes | `raw`/`raw`, source, 1 | 69.0 / 0.34 | 78.7 / 0.33 | **79.0 / 0.31** | 94.3 |
+
+FAFB → BANC cell types after NTAC, by subset: central brain 33.7 % (reference A) and 32.3 % (reference B), optic lobe 67.4 %. The expectations stated in advance:
+
+1. **Selected candidate within 2 points of the best: met once in four.** For FAFB → BANC cell types the score picks the best candidate. For MCNS → BANC cell types it picks a collapsed labeling that puts 77 % of the neurons into one type (1.4 % correct): such a labeling is self-consistent on the graph, and the chance correction (Cohen's kappa) does not penalize the collapse enough. The best candidate (58.0 %) ranks third by consistency, after two collapsed ones. For super classes it picks source normalization with full prior matching, 16–20 points below the best candidate (Spearman 0.61 and 0.86 between consistency and accuracy).
+2. **The pipeline beats every candidate without prior matching on cell types: met for FAFB → BANC** (61.7 vs. at most 38.2 %), not for MCNS → BANC (1.4 vs. 45.0 %, because of the collapsed choice).
+3. **Cell-type accuracy below FAFB → MCNS: met** (61.7 vs. 92.6 %).
+
+What carries over and what does not:
+
+- **Prior matching carries over.** In both runs the best cell-type candidate uses full prior matching (rho 1), 13.0 and 17.5 points above the best candidate without it, although BANC has no R1-6 photoreceptors: prior matching fills R1-6 with 10,800 neurons (FAFB → BANC), 20 % of the remaining errors, as anticipated in the protocol.
+- **Label-free selection by type consistency does not carry over reliably.** It worked on the two complete reconstructions, where all candidates were sensible labelings, but it was never tested against collapsed ones.
+- **Reconstruction completeness limits transfer.** The best candidates reach 92.6–94.3 % on super classes, but at most 58 % on cell types, and in the central brain only about a third of the neurons get the right type, also against the morphology-based reference.
+
 ### GNN-seeded NTAC: combining both
 
 NTAC needs labeled partners, the GNN does not. Seeding NTAC with the predictions on which three GNNs agree (`hybrid.py`) labels the neurons that have no labeled partners better than the GNNs alone. Cell types, accuracy (%) / macro-F1 on the scored neurons (the unlabeled hemisphere, or all labeled MCNS neurons for the transfer):
@@ -184,12 +207,12 @@ Related work and how this project relates to it: [docs/literature.md](docs/liter
 - Only types with ≥ 20 neurons are predicted (434 of 8,772 types); the many rare types are left out.
 - The setting is transductive: the whole graph is visible during training, only the labels of validation and test neurons are hidden.
 - Two animals of different sex, reconstructed and annotated by different teams. MCNS labels come from Janelia's `flywireType` mapping; 40 of the 434 FAFB types do not occur in it (some are split differently, e.g. Dm8a/b vs. yDm8/pDm8), and 2,751 neurons with several mapped types are not scored (a prediction falls within their type list for only 3–4 % of them).
-- The label-free pipeline (type-consistency selection, prior matching) was developed on the FAFB → MCNS pair while looking at its transfer errors. Run unchanged in the reverse direction it still helps (83.4 % on cell types vs. at most 78.5 % without prior matching), but both directions use the same two connectomes; a third one (e.g. BANC) would be the independent test.
+- The label-free pipeline (type-consistency selection, prior matching) was developed on the FAFB → MCNS pair while looking at its transfer errors. Run unchanged in the reverse direction it still helps (83.4 % on cell types vs. at most 78.5 % without prior matching). In the independent test on BANC, prior matching carried over but the selection by type consistency failed in three of four runs (see above); any revised selection rule needs another connectome to be tested on.
 - Prior matching assumes that type sizes are similar across flies; sex-specific and dimorphic types (about 5 % of the central brain) violate this.
 - Each seed changes both the data split and the initialization; the std covers both.
 - The cell-type GNN is trained for 300 epochs and its best epoch is close to the end, so it may be slightly underestimated.
 - Codex drops connections with fewer than 5 synapses.
-- FAFB and MCNS differ in proofreading state, synapse detection and annotation schemes; transfer results depend on how neurons and classes are aligned.
+- FAFB, MCNS and BANC differ in proofreading state, synapse detection and annotation schemes; transfer results depend on how neurons and classes are aligned. BANC's cell types come from an alignment to FAFB that uses connectivity.
 - The synthetic graph is for testing only and says nothing about biology.
 
 ## Citation
