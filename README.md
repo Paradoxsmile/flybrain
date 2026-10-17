@@ -183,6 +183,39 @@ What carries over and what does not:
 - **Label-free selection by type consistency does not carry over reliably.** It worked on the two complete reconstructions, where all candidates were sensible labelings, but it was never tested against collapsed ones.
 - **Reconstruction completeness limits transfer.** The best candidates reach 92.6–94.3 % on super classes, but at most 58 % on cell types, and in the central brain only about a third of the neurons get the right type, also against the morphology-based reference.
 
+### Reconstruction density: transfer between thinned copies of FAFB
+
+To separate density from everything else that differs between connectomes, `thinning.py` transfers between copies of FAFB that keep each synapse with probability p and drop connections with fewer than 5 remaining synapses (`flybrain/thinning.py`). At p = 0.4 a copy has about BANC's density (9.8 connections and a median of 34 input synapses per neuron; BANC: 8.6 and 30). GNNs trained on one copy (3 seeds, Kaggle T4 GPU) are tested on an independently thinned copy of every density, on their test split. Cell types with prior matching (rho 1), accuracy %:
+
+| Source \ target density | 1 | 0.6 | 0.4 | 0.25 |
+|---|---|---|---|---|
+| 1 | **95.1** | 89.4 | 72.9 | 41.7 |
+| 0.6 | 93.2 | **91.3** | 82.4 | 54.0 |
+| 0.4 | 87.0 | 88.8 | **83.9** | 64.5 |
+| 0.25 | 56.3 | 72.6 | 76.5 | **67.7** |
+
+- **Density alone explains about half of the drop on BANC.** The full-density GNN reaches 72.9 % on a copy at BANC's density (62.4 % without prior matching), against 55.7 % (38.2 %) on BANC.
+- **A sparser target is best served by a source thinned to its density** (83.9 vs. 72.9 % at p = 0.4). Even then accuracy falls with density (95.1 → 67.7 % on the diagonal): a sparse reconstruction loses information that no alignment recovers.
+- **A denser target, as future more complete reconstructions will be, is less of a problem when prior matching is used.** A GNN trained at p = 0.4 reaches 87.0 % on the full-density copy, more than at its own density. Without prior matching it reaches 70.0 %. Thinning the denser target down to the source density helps only without prior matching (70.0 → 82.1 %) or for a 4× gap (p = 0.25 → 1: 56.3 → 67.3 %).
+- Super classes stay at 90.8–97.8 % except when the sparsest target (p = 0.25) meets a source at p ≥ 0.6 (86.4 and 74.7 %).
+- **On BANC itself, a density-matched source did not help** (exploratory): GNNs trained at p = 0.4 reach at best 51.2 % on cell types, against 55.7 % for the full-density GNNs. On BANC's `raw` graph they gain 12.5 points, as the copies predict, but the full-density GNNs do better on the `density` graph, which keeps BANC's connections with 2 to 4 synapses. In a sparse reconstruction many strong connections survive as weak ones, and lowering the threshold recovers them. FAFB's public connections start at 5 synapses, so the thinned copies cannot show this.
+
+### Development sandbox and a revised selection rule
+
+The failures on BANC show that the label-free choices need a test bed with known labels that differs from the target in the ways new connectomes do. Thinned copies of the development connectomes (`label_free.py --target-retention`, `--target-exclude`) provide one without touching a new dataset: FAFB → MCNS at 100, 50 and 20 % of MCNS's synapses (20 % is about BANC's density relative to FAFB), MCNS → FAFB at 100 and 35 %, and FAFB → MCNS at 50 % without its R1-6 photoreceptors, with and without bounded prior matching. For every candidate, `label_free.py` records label-free properties besides type consistency: the agreement between the three seeds' labelings (disagreement between independently trained models tracks their error under distribution shift; Jiang et al., 2022) and how far the predicted type sizes are from the reference (Jensen-Shannon divergence). `selection_rules.py` compares rules built from them (`flybrain/selection.py`). Gap between the chosen and the best candidate, points, mean / worst over the cases (one per run and label):
+
+| Rule | Sandbox (14 cases) | BANC re-scored (8 cases, exploratory) |
+|---|---|---|
+| Type consistency (used so far) | 4.1 / 26.7 | 19.9 / 56.6 |
+| Type sizes closest to the reference | 4.1 / 26.0 | 0.6 / 1.8 |
+| Consistency + seed agreement, collapse guard | 1.1 / 8.9 | 1.5 / 5.8 |
+| **Type sizes + seed agreement** (`--select size_agreement`) | **1.3 / 4.0** | **1.1 / 6.3** |
+
+- At low density type consistency ranks the candidates inversely to their accuracy (Spearman −0.68 for cell types at 20 %), the BANC failure reproduced with known labels. On complete graphs it is the best single signal, and seed agreement tracks accuracy closely there (Spearman 0.98 for MCNS → FAFB cell types).
+- The rule combining type sizes and seed agreement had the smallest worst case on the sandbox and was chosen there, before it was computed on BANC. On BANC (re-run with the extra columns; the candidates' accuracies were known from the pre-registered runs) it picks a candidate within 0.5 points of the best in all four pre-registered runs, including the collapsed one (58.0 instead of 1.4 % for MCNS → BANC cell types, 92.1 instead of 72.3 % for FAFB → BANC super classes).
+- Missing types cost little: without R1-6 the best candidate loses 1.1 points, and prior matching still adds 11 points. Bounding prior matching (`--max-weight 10`) cuts the neurons wrongly assigned to the missing type from 7,833 to 2,627 but costs 0.5 points accuracy and 0.06 macro-F1, so it is not used.
+- The sandbox covers only density and missing types, and the rule was chosen from 14 cases; its worst case on BANC (6.3 points) comes from the exploratory run with density-matched GNNs. It needs a new connectome to be tested on.
+
 ### GNN-seeded NTAC: combining both
 
 NTAC needs labeled partners, the GNN does not. Seeding NTAC with the predictions on which three GNNs agree (`hybrid.py`) labels the neurons that have no labeled partners better than the GNNs alone. Cell types, accuracy (%) / macro-F1 on the scored neurons (the unlabeled hemisphere, or all labeled MCNS neurons for the transfer):
@@ -207,11 +240,11 @@ Related work and how this project relates to it: [docs/literature.md](docs/liter
 - Only types with ≥ 20 neurons are predicted (434 of 8,772 types); the many rare types are left out.
 - The setting is transductive: the whole graph is visible during training, only the labels of validation and test neurons are hidden.
 - Two animals of different sex, reconstructed and annotated by different teams. MCNS labels come from Janelia's `flywireType` mapping; 40 of the 434 FAFB types do not occur in it (some are split differently, e.g. Dm8a/b vs. yDm8/pDm8), and 2,751 neurons with several mapped types are not scored (a prediction falls within their type list for only 3–4 % of them).
-- The label-free pipeline (type-consistency selection, prior matching) was developed on the FAFB → MCNS pair while looking at its transfer errors. Run unchanged in the reverse direction it still helps (83.4 % on cell types vs. at most 78.5 % without prior matching). In the independent test on BANC, prior matching carried over but the selection by type consistency failed in three of four runs (see above); any revised selection rule needs another connectome to be tested on.
+- The label-free pipeline (type-consistency selection, prior matching) was developed on the FAFB → MCNS pair while looking at its transfer errors. Run unchanged in the reverse direction it still helps (83.4 % on cell types vs. at most 78.5 % without prior matching). In the independent test on BANC, prior matching carried over but the selection by type consistency failed in three of four runs (see above). The revised rule (type sizes + seed agreement) was chosen on a sandbox of the same two development connectomes and still needs a connectome it has not seen.
 - Prior matching assumes that type sizes are similar across flies; sex-specific and dimorphic types (about 5 % of the central brain) violate this.
 - Each seed changes both the data split and the initialization; the std covers both.
 - The cell-type GNN is trained for 300 epochs and its best epoch is close to the end, so it may be slightly underestimated.
-- Codex drops connections with fewer than 5 synapses.
+- Codex drops connections with fewer than 5 synapses. The thinned FAFB copies therefore cannot contain the weak connections that a sparse reconstruction still has, and they overstate what a density-matched source gains on BANC.
 - FAFB, MCNS and BANC differ in proofreading state, synapse detection and annotation schemes; transfer results depend on how neurons and classes are aligned. BANC's cell types come from an alignment to FAFB that uses connectivity.
 - The synthetic graph is for testing only and says nothing about biology.
 
