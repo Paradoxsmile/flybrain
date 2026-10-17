@@ -114,3 +114,15 @@ def test_label_free_on_a_degraded_copy_and_selection_rules():
     rules = [sys.executable, str(ROOT / "experiments/b_gnn_celltypes/selection_rules.py"), out]
     text = subprocess.run(rules, check=True, cwd=ROOT, capture_output=True, text=True).stdout
     assert "consistency_guarded" in text
+
+
+def test_thinning_experiment_with_density_augmentation():
+    out = "pytest_thinning_aug"
+    cmd = [sys.executable, str(ROOT / "experiments/b_gnn_celltypes/thinning.py"), "--synthetic"]
+    cmd += ["--epochs", "2", "--seeds", "0", "--retentions", "1", "--thin-aug", "0.3"]
+    cmd += ["--target-retentions", "1", "0.5", "--out", out]
+    subprocess.run(cmd, check=True, cwd=ROOT)
+    grid = pd.read_csv(ROOT / "results" / out / "grid.csv")
+    assert len(grid) == 1 * 2 * 2 and set(grid.p_target) == {1.0, 0.5}
+    model = ROOT / "results" / out / "models/cell_type/p1.0/s0/model.pt"
+    assert torch.load(model, weights_only=False)["cfg"]["thin_aug"] == 0.3

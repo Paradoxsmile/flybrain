@@ -13,7 +13,9 @@ test split, with the target's own feature normalization, without (rho 0) and wit
 (rho 1, sizes from the model's predictions on its training graph). p_t < p_s is a sparser target
 (as BANC), p_t > p_s a denser one (as future, more complete reconstructions). For p_t > p_s the
 target is also thinned down to the source density (retention p_s / p_t), a label-free way to
-align a denser target.
+align a denser target. With --thin-aug p_min, the GNNs are instead trained with density
+augmentation (flybrain.training: every epoch on a copy thinned to a random retention in
+[p_min, 1]); --target-retentions sets the target densities separately.
 
 Writes results/<out>/grid.csv (one row per label, p_s, p_t, strategy, rho, seed), stats.csv
 (graph statistics per copy), the models (models/<label>/p<p_s>/s<seed>/model.pt; finished
@@ -21,6 +23,7 @@ models are reused) and summary.md (mean over seeds).
 
 Usage: python experiments/b_gnn_celltypes/thinning.py [--labels cell_type] [--seeds 0 1 2]
        [--retentions 1 0.6 0.4 0.25] [--epochs N] [--synthetic] [--out thinning]
+       [--thin-aug 0.25 --retentions 1 --target-retentions 1 0.6 0.4 0.25 --out thinning_aug]
 """
 
 from __future__ import annotations
@@ -83,7 +86,7 @@ def trained_model(label, p_s, seed, src, args, device):
         model, cfg, _ = load_model(path, device)
         return model, cfg
     cfg = yaml.safe_load(CONFIGS[label].read_text())
-    cfg.update(seed=seed, retention=p_s)
+    cfg.update(seed=seed, retention=p_s, thin_aug=args.thin_aug)
     if args.epochs:
         cfg["epochs"] = args.epochs
     set_seed(seed)
@@ -100,7 +103,7 @@ def run_label(label: str, args, device) -> tuple[list, list]:
     msize = yaml.safe_load(CONFIGS[label].read_text()).get("min_class_size", 1)
     full = load_graph(label, synthetic=args.synthetic, min_class_size=msize)
     sources = {p: copy(full, p, SOURCE_SEED) for p in args.retentions}
-    targets = {p: copy(full, p, TARGET_SEED) for p in args.retentions}
+    targets = {p: copy(full, p, TARGET_SEED) for p in args.target_retentions or args.retentions}
     stat_rows = [
         {"label": label, "copy": role, "p": p, **stats(g)}
         for role, graphs in (("source", sources), ("target", targets))
@@ -151,8 +154,9 @@ def summary_lines(grid: pd.DataFrame, stat: pd.DataFrame) -> list[str]:
             m = mean[label, "as_is", rho].unstack("p_target")
             ps = sorted(m.columns, reverse=True)
             lines += [f"{label}, rho {rho:g} (rows: source density, columns: target density):", ""]
-            rows = [[f"{p_s:g}"] + [f"{m.loc[p_s, p]:.1f}" for p in ps] for p_s in ps]
-            lines += table(["p_s \ p_t"] + [f"{p:g}" for p in ps], rows) + [""]
+            sources = sorted(m.index, reverse=True)
+            rows = [[f"{p_s:g}"] + [f"{m.loc[p_s, p]:.1f}" for p in ps] for p_s in sources]
+            lines += table([r"p_s \ p_t"] + [f"{p:g}" for p in ps], rows) + [""]
         if "thinned_to_source" not in set(grid[grid.label == label].strategy):
             continue
         lines += [f"{label}, denser target thinned to the source density:", ""]
@@ -179,6 +183,8 @@ def main() -> None:
     p.add_argument("--labels", nargs="+", default=["cell_type"], choices=list(CONFIGS))
     p.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2])
     p.add_argument("--retentions", nargs="+", type=float, default=[1.0, 0.6, 0.4, 0.25])
+    p.add_argument("--target-retentions", nargs="+", type=float, default=None)
+    p.add_argument("--thin-aug", type=float, default=0.0, help="density augmentation p_min")
     p.add_argument("--epochs", type=int, default=None, help="override the config (for tests)")
     p.add_argument("--synthetic", action="store_true")
     p.add_argument("--out", default="thinning")
