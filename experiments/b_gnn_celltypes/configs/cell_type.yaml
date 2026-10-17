@@ -2,6 +2,8 @@
 seed: 0
 label_col: cell_type
 min_class_size: 20       # smaller types are unlabeled
+dataset: fafb             # fafb | mcns (male CNS brain, see flybrain/mcns.py)
+mcns_variant: density    # mcns synapse alignment: density | raw | janelia
 split: random            # random | left_right | right_left (train on one hemisphere, test on the other)
 feature_norm: global     # global (z-score on train) | per_side | rank_per_side (per hemisphere)
 drop_edge: 0.0           # augmentation: per-neuron edge drop rate drawn from [0, drop_edge] each epoch

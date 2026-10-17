@@ -105,15 +105,36 @@ def load_tables(
     return neurons, connections
 
 
+def encode_labels(
+    labels: pd.Series, min_class_size: int = 1, label_names: list[str] | None = None
+) -> tuple[np.ndarray, list[str]]:
+    """Integer codes (-1 = unlabeled) and class names for a label column.
+
+    Without label_names, classes with fewer than min_class_size members are unlabeled and the
+    remaining classes are numbered in order of appearance. With label_names (e.g. the classes of
+    another dataset), labels are coded in that label space and labels outside it are unlabeled.
+    """
+    labels = labels.astype("string")
+    if label_names is None:
+        counts = labels.value_counts()
+        codes, names = pd.factorize(labels.where(labels.map(counts) >= min_class_size))
+        return codes, [str(n) for n in names]
+    lookup = {name: i for i, name in enumerate(label_names)}
+    codes = labels.astype(object).map(lookup).fillna(-1).to_numpy(dtype=np.int64, copy=True)
+    return codes, list(label_names)
+
+
 def build_graph(
     neurons: pd.DataFrame,
     connections: pd.DataFrame,
     label_col: str = "super_class",
     min_class_size: int = 1,
+    label_names: list[str] | None = None,
 ) -> Data:
     """Build a PyG Data object. y is the integer label (-1 if unlabeled).
 
-    Classes with fewer than `min_class_size` neurons are treated as unlabeled.
+    Classes with fewer than `min_class_size` neurons are treated as unlabeled; with
+    `label_names`, labels are coded in that label space instead (see encode_labels).
 
     Attributes: x (degree features), edge_index, edge_weight, y, node_ids, label_names, and
     side (array of "left" / "right" / "center" / "", if the neurons table has a side column).
@@ -125,10 +146,7 @@ def build_graph(
     edge_index = torch.from_numpy(np.stack([src, dst])).long()
     edge_weight = torch.tensor(connections[WEIGHT_COL].to_numpy(), dtype=torch.float)
 
-    labels = neurons[label_col].astype("string")
-    counts = labels.value_counts()
-    labels = labels.where(labels.map(counts) >= min_class_size)
-    codes, names = pd.factorize(labels)  # NA -> -1
+    codes, names = encode_labels(neurons[label_col], min_class_size, label_names)
     x = torch.from_numpy(degree_features(len(neurons), edge_index, edge_weight)).float()
     data = Data(
         x=x,
@@ -138,9 +156,10 @@ def build_graph(
         num_nodes=len(neurons),
     )
     data.node_ids = torch.from_numpy(neurons[ID_COL].to_numpy().copy())
-    data.label_names = [str(n) for n in names]
-    if "side" in neurons.columns:
-        data.side = neurons["side"].astype("string").fillna("").to_numpy(dtype=str)
+    data.label_names = names
+    for col in ("side", "flywire_types"):  # flywire_types: MCNS only, may list several types
+        if col in neurons.columns:
+            setattr(data, col, neurons[col].astype("string").fillna("").to_numpy(dtype=str))
     return data
 
 
@@ -151,11 +170,31 @@ def load_graph(
     synthetic: bool = False,
     seed: int = 0,
     min_class_size: int = 1,
+    dataset: str = "fafb",
+    mcns_variant: str = "density",
 ) -> Data:
-    """Load the real graph (raw -> Parquet cache -> Data), or a synthetic one if requested."""
+    """Load the real graph (raw -> Parquet cache -> Data), or a synthetic one if requested.
+
+    dataset="mcns" loads the male CNS brain (flybrain.mcns, preprocessing `mcns_variant`) with
+    its labels coded in the FAFB label space (FAFB classes with >= min_class_size neurons), so
+    class indices mean the same in both graphs. With synthetic=True, a second synthetic graph
+    stands in for MCNS.
+    """
+    if dataset not in ("fafb", "mcns"):
+        raise ValueError(f"dataset must be 'fafb' or 'mcns', got {dataset!r}")
     if synthetic:
         from flybrain.synthetic import make_synthetic_tables
 
-        return build_graph(*make_synthetic_tables(seed=seed), label_col, min_class_size)
-    neurons, connections = load_tables(raw_dir, processed_dir)
-    return build_graph(neurons, connections, label_col, min_class_size)
+        fafb = make_synthetic_tables(seed=seed)
+        if dataset == "fafb":
+            return build_graph(*fafb, label_col, min_class_size)
+        names = encode_labels(fafb[0][label_col], min_class_size)[1]
+        return build_graph(*make_synthetic_tables(seed=seed + 1000), label_col, 1, names)
+    fafb_neurons, connections = load_tables(raw_dir, processed_dir)
+    if dataset == "fafb":
+        return build_graph(fafb_neurons, connections, label_col, min_class_size)
+    from flybrain.mcns import load_mcns_tables
+
+    names = encode_labels(fafb_neurons[label_col], min_class_size)[1]
+    neurons, connections = load_mcns_tables(mcns_variant, raw_dir / "mcns", processed_dir)
+    return build_graph(neurons, connections, label_col, 1, names)

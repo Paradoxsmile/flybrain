@@ -104,3 +104,37 @@ def ntac_seeded(
         labels[unlabeled] = labels[labeled][_assign(emb, labeled, unlabeled)]
         yield labels
         emb = ((1 - lr) * emb + lr * type_embedding(adj, labels, num_classes)).tocsr()
+
+
+def agreement_seeds(predictions: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """(majority vote, unanimous mask) of several models' predicted labels [models, nodes]."""
+    predictions = np.asarray(predictions)
+    vote = np.array([np.bincount(col).argmax() for col in predictions.T])
+    return vote, (predictions == predictions[0]).all(axis=0)
+
+
+def ntac_from_predictions(
+    edge_index: torch.Tensor,
+    edge_weight: torch.Tensor,
+    known: np.ndarray,
+    predictions: np.ndarray,
+    num_classes: int,
+    lr: float = 0.3,
+    steps: int = 15,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Seeded NTAC whose seeds are the known labels plus the predictions of several models
+    where they all agree (for neurons without a known label). `known` holds a label or -1 per
+    neuron. Returns (labels after the last step, seed mask)."""
+    vote, agree = agreement_seeds(predictions)
+    seeds = np.where(known >= 0, known, np.where(agree, vote, -1))
+    mask = seeds >= 0
+    *_, labels = ntac_seeded(
+        edge_index,
+        edge_weight,
+        torch.from_numpy(seeds),
+        torch.from_numpy(mask),
+        num_classes,
+        lr,
+        steps,
+    )
+    return labels, mask

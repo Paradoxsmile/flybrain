@@ -50,13 +50,20 @@ def command(label: str, split: str, method: str, seed: int, run: str, args) -> l
     min_size = yaml.safe_load(config.read_text()).get("min_class_size", 1)
     if method in ("gnn", "gnn_plain"):
         cmd = [str(HERE / "train_gnn.py"), "--config", str(config), "--run-name", run]
-        cmd += ["--set", f"split={split}", "--set", f"seed={seed}"]
+        cmd += [
+            "--set",
+            f"split={split}",
+            "--set",
+            f"seed={seed}",
+            "--set",
+            f"dataset={args.dataset}",
+        ]
         cmd += PLAIN if method == "gnn_plain" else []
         cmd += ["--set", f"epochs={args.epochs}"] if args.epochs else []
     else:
         script = "baseline_logreg.py" if method == "logreg" else "baselines.py"
         cmd = [str(HERE / script), "--label-col", label, "--min-class-size", str(min_size)]
-        cmd += ["--split", split, "--seed", str(seed), "--run-name", run]
+        cmd += ["--split", split, "--seed", str(seed), "--run-name", run, "--dataset", args.dataset]
         cmd += [] if method == "logreg" else ["--method", method]
     return [sys.executable, *cmd, *(["--synthetic"] if args.synthetic else [])]
 
@@ -104,10 +111,12 @@ def main() -> None:
     p.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
     p.add_argument("--epochs", type=int, default=None, help="override GNN epochs (for tests)")
     p.add_argument("--synthetic", action="store_true", help="use the synthetic test graph")
-    p.add_argument("--out", default="benchmark", help="results subdirectory")
+    p.add_argument("--dataset", default="fafb", choices=["fafb", "mcns"], help="graph to use")
+    p.add_argument("--out", default=None, help="results subdirectory (default: benchmark[_mcns])")
     p.add_argument("--no-run", action="store_true", help="only summarize finished runs")
     args = p.parse_args()
 
+    args.out = args.out or ("benchmark" if args.dataset == "fafb" else f"benchmark_{args.dataset}")
     out_dir = REPO_ROOT / "results" / args.out
     jobs = list(itertools.product(args.labels, args.splits, args.methods, args.seeds))
     for i, (label, split, method, seed) in enumerate(jobs, 1):

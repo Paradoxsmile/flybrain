@@ -8,7 +8,7 @@ import pytest
 import scipy.sparse as sp
 import torch
 
-from flybrain.ntac import ntac_seeded
+from flybrain.ntac import agreement_seeds, ntac_from_predictions, ntac_seeded
 
 ntac = pytest.importorskip("ntac")
 
@@ -56,3 +56,25 @@ def test_ntac_matches_official_package(lr):
     for step, (got, want) in enumerate(zip(ours, expected, strict=True)):
         assert (got == want).mean() == 1.0, f"step {step}: {(got != want).sum()} labels differ"
     assert (ours[-1][known] == y[known]).all()
+
+
+def test_agreement_seeds():
+    preds = np.array([[0, 1, 2, 2], [0, 1, 1, 2], [0, 2, 1, 2]])
+    vote, agree = agreement_seeds(preds)
+    assert vote.tolist() == [0, 1, 1, 2]
+    assert agree.tolist() == [True, False, False, True]
+
+
+def test_ntac_from_predictions_seeds_known_and_unanimous():
+    _, src, dst, w, y, known_mask = _graph()
+    known = np.where(known_mask, y, -1)
+    rng = np.random.default_rng(1)
+    # three "models": correct, except that each one errs on its own random tenth of the nodes
+    preds = np.stack([np.where(rng.random(len(y)) < 0.1, (y + 1) % 6, y) for _ in range(3)])
+    labels, seeds = ntac_from_predictions(
+        torch.tensor(np.stack([src, dst])), torch.tensor(w, dtype=torch.float), known, preds, 6
+    )
+    unanimous = (preds == preds[0]).all(axis=0)
+    assert np.array_equal(seeds, known_mask | unanimous)
+    assert (labels[known_mask] == y[known_mask]).all()  # known labels stay fixed
+    assert (labels == y).mean() > (preds[0] == y).mean()  # NTAC fixes some model errors
