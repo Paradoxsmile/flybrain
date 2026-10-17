@@ -51,6 +51,13 @@ def test_thinning_experiment_synthetic_runs():
     ) == {(0.5, 1.0)}
     assert (ROOT / "results" / out / "models/cell_type/p0.5/s0/model.pt").exists()
     assert "rho 1" in (ROOT / "results" / out / "summary.md").read_text(encoding="utf-8")
+    # label_free with the density-matched source models of this run
+    lf = [sys.executable, str(ROOT / "experiments/b_gnn_celltypes/label_free.py"), "--synthetic"]
+    lf += ["--target", "banc", "--source-retention", "0.5", "--models", f"{out}/models"]
+    lf += ["--labels", "cell_type", "--out", "pytest_lf_source_thinned"]
+    subprocess.run(lf, check=True, cwd=ROOT)
+    sel = (ROOT / "results/pytest_lf_source_thinned/cell_type/selected.json").read_text()
+    assert '"source_retention": 0.5' in sel
 
 
 def test_degraded_copies_keep_the_label_space():

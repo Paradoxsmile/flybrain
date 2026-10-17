@@ -55,6 +55,7 @@ from flybrain.loading import encode_labels, load_graph
 from flybrain.mcns import VARIANTS as MCNS_VARIANTS
 from flybrain.ntac import ntac_from_predictions
 from flybrain.splits import make_split
+from flybrain.thinning import thin_graph
 from flybrain.training import graph_inputs, load_model
 from flybrain.utils import REPO_ROOT, write_predictions
 
@@ -64,13 +65,17 @@ RHOS = (0.0, 0.25, 0.5, 0.75, 1.0)
 DATASET_VARIANTS = {"fafb": [None], "mcns": list(MCNS_VARIANTS), "banc": list(BANC_VARIANTS)}
 SCORING = {"fafb": "fafb", "mcns": "raw", "banc": "raw"}  # least preprocessed target graph
 DEFAULT_MODELS = {"fafb": "transfer2", "mcns": "transfer_rev"}
+THINNING_SOURCE_SEED = 1  # thinning.py's source realization
 DEFAULT_OUT = {("fafb", "mcns"): "label_free", ("mcns", "fafb"): "label_free_rev"}
 
 
-def model_paths(models: str, label: str) -> list:
-    paths = sorted((REPO_ROOT / "results" / models / label / "gnn").glob("s*/model.pt"))
+def model_paths(models: str, label: str, retention: float = 1.0) -> list:
+    """model.pt files of transfer.py (<models>/<label>/gnn/s*) or, for a thinned source, of
+    thinning.py (<models>/<label>/p<retention>/s*)."""
+    sub = "gnn" if retention == 1.0 else f"p{retention}"
+    paths = sorted((REPO_ROOT / "results" / models / label / sub).glob("s*/model.pt"))
     if not paths:
-        raise FileNotFoundError(f"no model.pt under results/{models}/{label}/gnn")
+        raise FileNotFoundError(f"no model.pt under results/{models}/{label}/{sub}")
     return paths
 
 
@@ -118,8 +123,11 @@ def setups(label: str, args):
     cases = []
     for sv in variants(args.source, args.synthetic):
         suffixed = sv is not None and not args.synthetic
-        paths = model_paths(f"{args.models}_{sv}" if suffixed else args.models, label)
+        models = f"{args.models}_{sv}" if suffixed else args.models
+        paths = model_paths(models, label, args.source_retention)
         src = load(args.source, label, sv, args.synthetic)
+        if args.source_retention < 1:  # the copy the models were trained on (thinning.py)
+            src = thin_graph(src, args.source_retention, seed=THINNING_SOURCE_SEED)
         for tkey, tgt in targets.items():
             if sv is None:
                 name = tkey
@@ -252,6 +260,7 @@ def run_label(label: str, args, out_dir) -> dict:
         "target_retention": args.target_retention,
         "target_exclude": list(args.target_exclude),
         "max_weight": args.max_weight,
+        "source_retention": args.source_retention,
         "models": used_models,
         "chosen": {"variant": chosen[0], "norm": chosen[1], "rho": chosen[2]},
         "choice_by_scoring_graph": {c: list(v) for c, v in other_choices.items()},
@@ -320,6 +329,9 @@ def main() -> None:
     p.add_argument("--retention-seed", type=int, default=2, help="thinning realization")
     p.add_argument("--target-exclude", nargs="*", default=[], help="cell types to remove")
     p.add_argument("--max-weight", type=float, default=None, help="bound prior matching")
+    p.add_argument(
+        "--source-retention", type=float, default=1.0, help="GNNs of thinning.py at this density"
+    )
     p.add_argument("--synthetic", action="store_true", help="synthetic stand-ins (for tests)")
     p.add_argument("--out", default=None, help="default: label_free[_rev | _<source>_<target>]")
     args = p.parse_args()
@@ -329,10 +341,15 @@ def main() -> None:
     args.models = args.models or DEFAULT_MODELS[args.source]
     pair = (args.source, args.target)
     default = DEFAULT_OUT.get(pair, f"label_free_{args.source}_{args.target}")
-    if degraded or args.max_weight:
+    if args.source_retention < 1:
+        if args.source != "fafb":
+            p.error("--source-retention needs --source fafb (models from thinning.py)")
+        args.models = args.models if args.models != DEFAULT_MODELS["fafb"] else "thinning/models"
+    if degraded or args.max_weight or args.source_retention < 1:
         default = f"label_free_{args.source}_{args.target}_r{args.target_retention:g}"
         default += "_x" if args.target_exclude else ""
         default += f"_w{args.max_weight:g}" if args.max_weight else ""
+        default += f"_s{args.source_retention:g}" if args.source_retention < 1 else ""
     args.out = args.out or default
     out_dir = REPO_ROOT / "results" / args.out
     sels = [run_label(label, args, out_dir) for label in args.labels]
