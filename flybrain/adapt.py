@@ -14,13 +14,19 @@ import numpy as np
 
 
 def prior_weights(
-    probs: np.ndarray, target: np.ndarray, iters: int = 200, tol: float = 1e-6
+    probs: np.ndarray,
+    target: np.ndarray,
+    iters: int = 200,
+    tol: float = 1e-6,
+    max_weight: float | None = None,
 ) -> np.ndarray:
     """Class weights v such that the soft class counts of probs * v (rows renormalized) match
     `target` (expected number of neurons per class; sums to the number of rows).
 
     Sinkhorn iterations on the probability matrix with damped (square-root) updates. Classes
-    that no neuron can take (zero probability everywhere) keep weight 1.
+    that no neuron can take (zero probability everywhere) keep weight 1. With max_weight, every
+    weight stays within [1 / max_weight, max_weight]: a class that is missing or much smaller
+    in the target cannot be filled by forcing neurons into it (bounded, partial matching).
     """
     probs = np.asarray(probs, dtype=np.float64)
     target = np.asarray(target, dtype=np.float64)
@@ -31,6 +37,9 @@ def prior_weights(
         counts = q.sum(axis=0)
         ratio = np.where(counts > 0, target / np.maximum(counts, 1e-300), 1.0)
         v *= np.sqrt(ratio)
+        if max_weight is not None:  # weights only matter relative to each other
+            v /= np.exp((target * np.log(v)).sum() / target.sum())
+            v = np.clip(v, 1.0 / max_weight, max_weight)
         if np.max(np.abs(counts - target)) < tol * len(probs):
             break
     return v

@@ -55,7 +55,8 @@ def evaluate(model, x, adj, y, mask) -> tuple[float, float]:
 def fit_gnn(cfg: dict, data: Data, train: torch.Tensor, val: torch.Tensor, device) -> Fitted:
     """Train a DirectedSAGE on `data` (raw degree features) and keep the epoch with the best
     validation macro-F1. Features are normalized as cfg["feature_norm"] says (statistics from the
-    training nodes for "global"); cfg["drop_edge"] > 0 trains on randomly thinned subgraphs."""
+    training nodes for "global"); cfg["drop_edge"] > 0 trains on subgraphs with randomly dropped
+    edges, cfg["thin_aug"] = p_min > 0 on copies with randomly thinned synapses."""
     norm, side = cfg.get("feature_norm", "global"), getattr(data, "side", None)
     raw_x = data.x
     x = normalize_features(raw_x, norm, train, side).to(device)
@@ -71,6 +72,21 @@ def fit_gnn(cfg: dict, data: Data, train: torch.Tensor, val: torch.Tensor, devic
     # exact degrees; evaluation always uses the full graph
     drop_rate = cfg.get("drop_edge", 0.0)
     gen = torch.Generator(device=device).manual_seed(cfg["seed"])
+
+    # density augmentation: each epoch keeps every synapse with a retention drawn from
+    # [p_min, 1] (as in flybrain.thinning: binomial thinning, connections below 5 synapses
+    # dropped), with degree features recomputed and normalized by the copy's own statistics,
+    # as a target graph is at transfer
+    thin_min = cfg.get("thin_aug", 0.0)
+    counts = w.round()
+
+    def thinned() -> tuple[torch.Tensor, tuple]:
+        p = thin_min + (1 - thin_min) * torch.rand(1, generator=gen, device=device)
+        c = torch.binomial(counts, p.expand_as(counts), generator=gen)
+        keep = c >= 5
+        sub = degree_features(n, ei[:, keep].cpu(), c[keep].cpu())
+        x_sub = normalize_features(torch.from_numpy(sub).float(), norm, train, side)
+        return x_sub.to(device), means(bidirectional, keep, c)
 
     def augmented() -> tuple[torch.Tensor, tuple]:
         keep = drop_edges(ei, n, drop_rate, gen)
@@ -90,7 +106,10 @@ def fit_gnn(cfg: dict, data: Data, train: torch.Tensor, val: torch.Tensor, devic
     for epoch in range(1, cfg["epochs"] + 1):
         model.train()
         opt.zero_grad()
-        x_ep, adj_ep = augmented() if drop_rate > 0 else (x, adj)
+        if thin_min > 0:
+            x_ep, adj_ep = thinned()
+        else:
+            x_ep, adj_ep = augmented() if drop_rate > 0 else (x, adj)
         loss = F.cross_entropy(model(x_ep, *adj_ep)[train_d], y[train_d], weight=weight)
         loss.backward()
         opt.step()

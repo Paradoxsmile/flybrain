@@ -35,6 +35,7 @@ import pyarrow.compute as pc
 import pyarrow.feather as pf
 
 from flybrain.loading import ID_COL, POST_COL, PRE_COL, PROCESSED_DIR, RAW_DIR, WEIGHT_COL
+from flybrain.thinning import thin_counts
 
 BANC_RAW_DIR = RAW_DIR / "banc"
 META_FILE = "banc_888_meta.feather"
@@ -111,10 +112,15 @@ def build_banc_cache(
 
 
 def load_banc_tables(
-    variant: str = "raw", raw_dir: Path = BANC_RAW_DIR, processed_dir: Path = PROCESSED_DIR
+    variant: str = "raw",
+    raw_dir: Path = BANC_RAW_DIR,
+    processed_dir: Path = PROCESSED_DIR,
+    retention: float = 1.0,
+    seed: int = 0,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """(neurons, connections) of the BANC brain, preprocessed as in VARIANTS[variant]; the cache
-    is built from the raw files on first use."""
+    is built from the raw files on first use. retention < 1 thins the synapse counts before
+    the threshold (flybrain.thinning), for a less complete copy."""
     if variant not in VARIANTS:
         raise ValueError(f"variant must be one of {sorted(VARIANTS)}, got {variant!r}")
     n_cache = processed_dir / "banc_neurons.parquet"
@@ -123,6 +129,9 @@ def load_banc_tables(
         neurons, connections = pd.read_parquet(n_cache), pd.read_parquet(c_cache)
     else:
         neurons, connections = build_banc_cache(raw_dir, processed_dir)
+    if retention < 1.0:
+        counts = thin_counts(connections[WEIGHT_COL].to_numpy(), retention, seed)
+        connections = connections.assign(**{WEIGHT_COL: counts})
     min_raw, scale = VARIANTS[variant]
     connections = connections[connections[WEIGHT_COL] >= min_raw].copy()
     connections[WEIGHT_COL] = connections[WEIGHT_COL].to_numpy(dtype=np.float64) * scale

@@ -99,6 +99,7 @@ class MeanBuilder:
     ):
         self.src, self.dst = edge_index
         self.n = num_nodes
+        self.edge_index, self.weighting = edge_index, weighting
         self.w = _edge_values(edge_index, edge_weight, weighting)
         self.by_dst = torch.argsort(self.dst * num_nodes + self.src)  # rows = targets
         self.by_src = torch.argsort(self.src * num_nodes + self.dst)  # rows = sources
@@ -112,8 +113,8 @@ class MeanBuilder:
             crow, cols[order], values[order], (self.n, self.n), check_invariants=False
         )
 
-    def _mean(self, rows, cols, by_rows, by_cols, keep) -> SparseMean:
-        w = self.w if keep is None else self.w * keep
+    def _mean(self, rows, cols, by_rows, by_cols, keep, w) -> SparseMean:
+        w = w if keep is None else w * keep
         total = torch.zeros(self.n, device=w.device).index_add_(0, rows, w)
         values = w / total[rows].clamp(min=1e-12)
         a = self._csr(by_rows, rows, cols, values, keep)
@@ -121,13 +122,20 @@ class MeanBuilder:
         return SparseMean.from_csr(a, a_t)
 
     def __call__(
-        self, bidirectional: bool = True, keep: torch.Tensor | None = None
+        self,
+        bidirectional: bool = True,
+        keep: torch.Tensor | None = None,
+        edge_weight: torch.Tensor | None = None,
     ) -> tuple[SparseMean, SparseMean | None]:
-        """(mean over inputs, mean over outputs or None); keep: bool mask of edges to use."""
-        mean_in = self._mean(self.dst, self.src, self.by_dst, self.by_src, keep)
+        """(mean over inputs, mean over outputs or None); keep: bool mask of edges to use;
+        edge_weight: new synapse counts for this call (e.g. thinned), weighted as configured."""
+        w = self.w
+        if edge_weight is not None:
+            w = _edge_values(self.edge_index, edge_weight, self.weighting)
+        mean_in = self._mean(self.dst, self.src, self.by_dst, self.by_src, keep, w)
         if not bidirectional:
             return mean_in, None
-        return mean_in, self._mean(self.src, self.dst, self.by_src, self.by_dst, keep)
+        return mean_in, self._mean(self.src, self.dst, self.by_src, self.by_dst, keep, w)
 
 
 def drop_edges(

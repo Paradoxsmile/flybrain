@@ -14,6 +14,7 @@ import torch
 from torch_geometric.data import Data
 
 from flybrain.features import degree_features
+from flybrain.thinning import thin_counts
 from flybrain.utils import REPO_ROOT
 
 RAW_DIR = REPO_ROOT / "data" / "raw"
@@ -31,6 +32,7 @@ POST_COL = "post_root_id"
 WEIGHT_COL = "syn_count"
 CELL_TYPE_SRC_COL = "primary_type"  # column in the cell-types table, merged in as "cell_type"
 LABEL_COLS = ("super_class", "cell_type")
+MIN_COUNT = 5  # Codex threshold of the FAFB connections
 
 
 def find_raw_file(raw_dir: Path, stems: str | tuple[str, ...]) -> Path | None:
@@ -164,6 +166,27 @@ def build_graph(
     return data
 
 
+def degrade_tables(
+    neurons: pd.DataFrame,
+    connections: pd.DataFrame,
+    retention: float = 1.0,
+    seed: int = 0,
+    exclude_types: tuple = (),
+    min_count: int | None = MIN_COUNT,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """A less complete copy of a connectome: neurons of `exclude_types` (cell_type) removed,
+    synapse counts binomially thinned (flybrain.thinning) and, if min_count is given,
+    connections with fewer remaining synapses dropped."""
+    if exclude_types:
+        neurons = neurons[~neurons["cell_type"].isin(list(exclude_types))]
+    if retention < 1.0:
+        counts = thin_counts(connections[WEIGHT_COL].to_numpy(), retention, seed)
+        connections = connections.assign(**{WEIGHT_COL: counts})
+        if min_count is not None:
+            connections = connections[connections[WEIGHT_COL] >= min_count]
+    return neurons, connections
+
+
 def load_graph(
     label_col: str = "super_class",
     raw_dir: Path = RAW_DIR,
@@ -174,6 +197,9 @@ def load_graph(
     dataset: str = "fafb",
     mcns_variant: str = "density",
     banc_variant: str = "raw",
+    retention: float = 1.0,
+    retention_seed: int = 0,
+    exclude_types: tuple = (),
 ) -> Data:
     """Load the real graph (raw -> Parquet cache -> Data), or a synthetic one if requested.
 
@@ -182,6 +208,10 @@ def load_graph(
     class indices mean the same in both graphs; dataset="banc" likewise loads the BANC brain
     (flybrain.banc, preprocessing `banc_variant`). With synthetic=True, other synthetic graphs
     stand in for MCNS and BANC.
+
+    retention < 1 or exclude_types give a less complete copy (degrade_tables; for MCNS and BANC
+    the counts are thinned before the variant's threshold), labeled in the label space of the
+    full FAFB graph.
     """
     offsets = {"fafb": 0, "mcns": 1000, "banc": 2000}  # synthetic stand-ins
     if dataset not in offsets:
@@ -190,21 +220,33 @@ def load_graph(
         from flybrain.synthetic import make_synthetic_tables
 
         fafb = make_synthetic_tables(seed=seed)
-        if dataset == "fafb":
+        if dataset == "fafb" and retention == 1.0 and not exclude_types:
             return build_graph(*fafb, label_col, min_class_size)
         names = encode_labels(fafb[0][label_col], min_class_size)[1]
-        other = make_synthetic_tables(seed=seed + offsets[dataset])
+        other = fafb if dataset == "fafb" else make_synthetic_tables(seed=seed + offsets[dataset])
+        other = degrade_tables(*other, retention, retention_seed, exclude_types)
         return build_graph(*other, label_col, 1, names)
     fafb_neurons, connections = load_tables(raw_dir, processed_dir)
-    if dataset == "fafb":
+    full = retention == 1.0 and not exclude_types
+    if dataset == "fafb" and full:
         return build_graph(fafb_neurons, connections, label_col, min_class_size)
     names = encode_labels(fafb_neurons[label_col], min_class_size)[1]
-    if dataset == "mcns":
+    if dataset == "fafb":
+        neurons = fafb_neurons
+    elif dataset == "mcns":
         from flybrain.mcns import load_mcns_tables
 
-        neurons, connections = load_mcns_tables(mcns_variant, raw_dir / "mcns", processed_dir)
+        neurons, connections = load_mcns_tables(
+            mcns_variant, raw_dir / "mcns", processed_dir, retention, retention_seed
+        )
     else:
         from flybrain.banc import load_banc_tables
 
-        neurons, connections = load_banc_tables(banc_variant, raw_dir / "banc", processed_dir)
+        neurons, connections = load_banc_tables(
+            banc_variant, raw_dir / "banc", processed_dir, retention, retention_seed
+        )
+    thin_here = retention if dataset == "fafb" else 1.0  # MCNS / BANC: thinned in their loader
+    neurons, connections = degrade_tables(
+        neurons, connections, thin_here, retention_seed, exclude_types
+    )
     return build_graph(neurons, connections, label_col, 1, names)

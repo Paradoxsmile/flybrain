@@ -21,6 +21,14 @@ choice depends on the scoring graph. For BANC targets, accuracy is also reported
 for cell types, against the morphology-matched FAFB type in the central brain
 (docs/banc_protocol.md).
 
+For development without touching new connectomes, the target can be made less complete
+(--target-retention: synapses binomially thinned before the variant's threshold;
+--target-exclude: cell types removed), and prior matching can be bounded (--max-weight).
+candidates.csv also records label-free properties of each labeling (number of predicted types,
+share of the largest one, Jensen-Shannon divergence of the predicted type sizes from the
+reference, agreement between the seeds' labelings), to compare selection rules
+(selection_rules.py).
+
 Writes results/<out>/<label>/candidates.csv, selected.json, predictions.parquet and summary.md.
 
 Usage: python experiments/b_gnn_celltypes/label_free.py [--models transfer2] [--score-all]
@@ -72,13 +80,25 @@ def variants(dataset: str, synthetic: bool) -> list:
     return ["synthetic"] if synthetic else DATASET_VARIANTS[dataset]
 
 
-def load(dataset: str, label: str, variant, synthetic: bool):
-    extra = {}
+def load(dataset: str, label: str, variant, synthetic: bool, **degrade):
+    extra = dict(degrade)
     if dataset != "fafb":  # synthetic graphs ignore the variant
         extra[f"{dataset}_variant"] = DATASET_VARIANTS[dataset][0] if synthetic else variant
     return load_graph(
         label, synthetic=synthetic, min_class_size=LABELS[label], dataset=dataset, **extra
     )
+
+
+def js_divergence(p: np.ndarray, q: np.ndarray) -> float:
+    """Jensen-Shannon divergence (bits) between two distributions."""
+    p, q = p / p.sum(), q / q.sum()
+    m = (p + q) / 2
+
+    def kl(a):
+        nz = a > 0
+        return float((a[nz] * np.log2(a[nz] / m[nz])).sum())
+
+    return (kl(p) + kl(q)) / 2
 
 
 def setups(label: str, args):
@@ -87,7 +107,14 @@ def setups(label: str, args):
     name is the target variant for a FAFB source, the source variant for a FAFB target and
     "<source variant>/<target variant>" otherwise."""
     tvs = variants(args.target, args.synthetic)
-    targets = {tv or args.target: load(args.target, label, tv, args.synthetic) for tv in tvs}
+    degrade = {
+        "retention": args.target_retention,
+        "retention_seed": args.retention_seed,
+        "exclude_types": tuple(args.target_exclude),
+    }
+    targets = {
+        tv or args.target: load(args.target, label, tv, args.synthetic, **degrade) for tv in tvs
+    }
     cases = []
     for sv in variants(args.source, args.synthetic):
         suffixed = sv is not None and not args.synthetic
@@ -149,7 +176,7 @@ def run_label(label: str, args, out_dir) -> dict:
     rows, preds, ensembles = [], {}, {}  # keyed by (name, norm, rho)
     for (name, paths, src, tgt), norm in itertools.product(cases, NORMS):
         assert tgt.num_nodes == len(y)
-        seed_probs, seed_weights = [], []  # float32 probabilities and prior weights per seed
+        seed_probs, seed_weights, refs = [], [], []  # per seed
         for path in paths:
             model, cfg, names = load_model(path)
             assert names == src.label_names == tgt.label_names
@@ -161,8 +188,11 @@ def run_label(label: str, args, out_dir) -> dict:
                 else normalize_features(tgt.x, "global", fit_mask=train, reference=src.x)
             )
             p = probabilities(model, cfg, tgt, x)
-            seed_weights.append(prior_weights(p, ref.mean(axis=0) * len(p)))
+            weights = prior_weights(p, ref.mean(axis=0) * len(p), max_weight=args.max_weight)
+            seed_weights.append(weights)
             seed_probs.append(p.astype(np.float32))
+            refs.append(ref.mean(axis=0))
+        reference = np.mean(refs, axis=0)
         for rho in RHOS:
             total = np.zeros_like(seed_probs[0])
             seed_preds = []
@@ -180,6 +210,15 @@ def run_label(label: str, args, out_dir) -> dict:
                 row[f"consistency_{gname}"] = type_consistency(
                     g.edge_index, g.edge_weight, ensemble, k
                 )[0]
+            sizes = np.bincount(ensemble, minlength=k).astype(float)
+            row["n_types"] = int((sizes > 0).sum())
+            row["top_share"] = float(sizes.max() / sizes.sum())
+            row["ref_top_share"] = float(reference.max() / reference.sum())
+            row["size_js"] = js_divergence(sizes, reference)
+            pairs = list(itertools.combinations(seed_preds, 2))
+            agree = [(a == b).mean() for a, b in pairs]
+            row["pairwise_agreement"] = float(np.mean(agree)) if agree else float("nan")
+            row["seed_agreement"] = float((np.stack(seed_preds) == seed_preds[0]).all(0).mean())
             row["acc"], row["macro_f1"] = score(ensemble, y)
             seed_acc = [score(sp, y)[0] for sp in seed_preds]
             row["seed_acc_mean"], row["seed_acc_std"] = (
@@ -210,6 +249,9 @@ def run_label(label: str, args, out_dir) -> dict:
         "label": label,
         "source": args.source,
         "target": args.target,
+        "target_retention": args.target_retention,
+        "target_exclude": list(args.target_exclude),
+        "max_weight": args.max_weight,
         "models": used_models,
         "chosen": {"variant": chosen[0], "norm": chosen[1], "rho": chosen[2]},
         "choice_by_scoring_graph": {c: list(v) for c, v in other_choices.items()},
@@ -274,14 +316,25 @@ def main() -> None:
     p.add_argument("--models", default=None, help="results subdirectory (prefix for MCNS)")
     p.add_argument("--labels", nargs="+", default=list(LABELS), choices=list(LABELS))
     p.add_argument("--score-all", action="store_true", help="consistency on all target graphs")
+    p.add_argument("--target-retention", type=float, default=1.0, help="thin the target")
+    p.add_argument("--retention-seed", type=int, default=2, help="thinning realization")
+    p.add_argument("--target-exclude", nargs="*", default=[], help="cell types to remove")
+    p.add_argument("--max-weight", type=float, default=None, help="bound prior matching")
     p.add_argument("--synthetic", action="store_true", help="synthetic stand-ins (for tests)")
     p.add_argument("--out", default=None, help="default: label_free[_rev | _<source>_<target>]")
     args = p.parse_args()
-    if args.source == args.target:
-        p.error("source and target must differ")
+    degraded = args.target_retention < 1 or args.target_exclude
+    if args.source == args.target and not degraded:
+        p.error("source and target must differ unless the target is degraded")
     args.models = args.models or DEFAULT_MODELS[args.source]
     pair = (args.source, args.target)
-    args.out = args.out or DEFAULT_OUT.get(pair, f"label_free_{args.source}_{args.target}")
+    default = DEFAULT_OUT.get(pair, f"label_free_{args.source}_{args.target}")
+    if degraded or args.max_weight:
+        default = f"label_free_{args.source}_{args.target}_r{args.target_retention:g}"
+        default += "_x" * bool(args.target_exclude) + f"_w{args.max_weight:g}" * bool(
+            args.max_weight
+        )
+    args.out = args.out or default
     out_dir = REPO_ROOT / "results" / args.out
     sels = [run_label(label, args, out_dir) for label in args.labels]
     lines = summary_lines(sels, args.source, args.target)

@@ -26,3 +26,17 @@ def test_biased_classifier_is_corrected():
     np.testing.assert_allclose((q / q.sum(1, keepdims=True)).sum(0), [500, 500], rtol=1e-4)
     assert (after == y).mean() > (before == y).mean()
     assert np.array_equal(adapt_predictions(probs, v, 0.0), before)
+
+
+def test_bounded_matching_does_not_fill_a_missing_class():
+    rng = np.random.default_rng(0)
+    # 1000 neurons of classes 0 and 1; the reference also expects 300 of class 2, which no
+    # neuron resembles (as R1-6 photoreceptors in BANC)
+    probs = rng.dirichlet([5, 5, 0.2], size=1000)
+    target = np.array([350.0, 350.0, 300.0])
+    free = prior_weights(probs, target)
+    bounded = prior_weights(probs, target, max_weight=10)
+    assert free[2] > 10 and bounded.max() <= 10 and bounded.min() >= 0.1
+    assert (adapt_predictions(probs, bounded, 1) == 2).sum() < (
+        adapt_predictions(probs, free, 1) == 2
+    ).sum()
