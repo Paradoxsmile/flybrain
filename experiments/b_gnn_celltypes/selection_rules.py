@@ -12,6 +12,8 @@ choice. Rules:
   size_match           predicted type sizes closest to the reference (smallest Jensen-Shannon
                        divergence): a misaligned model cannot produce the expected sizes, even
                        after prior matching
+  rank_size_agreement  best mean rank of size match and agreement
+  rank_all             best mean rank of consistency, agreement and size match
 
 Prints and writes, per run and label: the accuracy of the best candidate (post hoc) and, per
 rule, the accuracy of its choice and the gap to the best.
@@ -49,6 +51,10 @@ def choose(c: pd.DataFrame) -> dict[str, pd.Series]:
         chosen["agreement"] = c.loc[c.pairwise_agreement.idxmax()]
         chosen["agreement_guarded"] = g.loc[g.pairwise_agreement.idxmax()]
         chosen["rank_mean"] = g.loc[ranks.idxmin()]
+        size_rank = c.size_js.rank()
+        two = size_rank + c.pairwise_agreement.rank(ascending=False)
+        chosen["rank_size_agreement"] = c.loc[two.idxmin()]
+        chosen["rank_all"] = c.loc[(two + c[key].rank(ascending=False)).idxmin()]
     return chosen
 
 
