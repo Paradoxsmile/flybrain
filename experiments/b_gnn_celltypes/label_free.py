@@ -10,6 +10,9 @@ Per label, with the GNNs saved by transfer.py (model.pt, one per seed):
 3. Selection: the candidate (variant, normalization, rho) whose ensemble labeling (mean of the
    seeds' adjusted probabilities) has the highest type consistency (flybrain.consistency) on the
    scoring graph, the least preprocessed target graph (`raw` for MCNS and BANC), is chosen.
+   --select size_agreement instead takes the best mean rank of predicted type sizes closest to
+   the reference and agreement between the seeds (flybrain.selection; chosen on the development
+   sandbox after consistency failed on BANC).
 4. Refinement: NTAC on the chosen target graph, seeded where all seeds agree.
 Target labels are only used to report accuracy.
 
@@ -54,6 +57,7 @@ from flybrain.features import normalize_features
 from flybrain.loading import encode_labels, load_graph
 from flybrain.mcns import VARIANTS as MCNS_VARIANTS
 from flybrain.ntac import ntac_from_predictions
+from flybrain.selection import RULES, choose, choose_all
 from flybrain.splits import make_split
 from flybrain.thinning import thin_graph
 from flybrain.training import graph_inputs, load_model
@@ -237,7 +241,8 @@ def run_label(label: str, args, out_dir) -> dict:
             print(f"[label_free] {label} {row}", flush=True)
 
     cand = pd.DataFrame(rows)
-    best = cand.loc[cand[f"consistency_{scoring_key}"].idxmax()]
+    key = f"consistency_{scoring_key}"
+    best = cand.loc[choose(cand, args.select, key)]
     chosen = (best.variant, best.norm, float(best.rho))
     post_hoc = cand.loc[cand.acc.idxmax()]
     other_choices = {
@@ -262,7 +267,12 @@ def run_label(label: str, args, out_dir) -> dict:
         "max_weight": args.max_weight,
         "source_retention": args.source_retention,
         "models": used_models,
+        "select": args.select,
         "chosen": {"variant": chosen[0], "norm": chosen[1], "rho": chosen[2]},
+        "choice_by_rule": {
+            rule: [cand.variant[i], cand.norm[i], float(cand.rho[i]), float(cand.acc[i])]
+            for rule, i in choose_all(cand, key).items()
+        },
         "choice_by_scoring_graph": {c: list(v) for c, v in other_choices.items()},
         "selected_acc": float(best.acc),
         "selected_macro_f1": float(best.macro_f1),
@@ -325,6 +335,7 @@ def main() -> None:
     p.add_argument("--models", default=None, help="results subdirectory (prefix for MCNS)")
     p.add_argument("--labels", nargs="+", default=list(LABELS), choices=list(LABELS))
     p.add_argument("--score-all", action="store_true", help="consistency on all target graphs")
+    p.add_argument("--select", default="consistency", choices=RULES, help="selection rule")
     p.add_argument("--target-retention", type=float, default=1.0, help="thin the target")
     p.add_argument("--retention-seed", type=int, default=2, help="thinning realization")
     p.add_argument("--target-exclude", nargs="*", default=[], help="cell types to remove")
@@ -350,6 +361,7 @@ def main() -> None:
         default += "_x" if args.target_exclude else ""
         default += f"_w{args.max_weight:g}" if args.max_weight else ""
         default += f"_s{args.source_retention:g}" if args.source_retention < 1 else ""
+    default += f"_{args.select}" if args.select != "consistency" else ""
     args.out = args.out or default
     out_dir = REPO_ROOT / "results" / args.out
     sels = [run_label(label, args, out_dir) for label in args.labels]

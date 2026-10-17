@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -108,9 +109,12 @@ def test_label_free_on_a_degraded_copy_and_selection_rules():
     run = [sys.executable, str(ROOT / "experiments/b_gnn_celltypes/label_free.py"), "--synthetic"]
     run += ["--source", "fafb", "--target", "fafb", "--target-retention", "0.5"]
     run += ["--max-weight", "10", "--models", models, "--labels", "super_class", "--out", out]
+    run += ["--select", "size_agreement"]
     subprocess.run(run, check=True, cwd=ROOT)
     c = pd.read_csv(ROOT / "results" / out / "super_class/candidates.csv")
     assert {"n_types", "top_share", "ref_top_share", "size_js", "seed_agreement"} <= set(c)
+    sel = json.loads((ROOT / "results" / out / "super_class/selected.json").read_text())
+    assert sel["select"] == "size_agreement" and "size_match" in sel["choice_by_rule"]
     rules = [sys.executable, str(ROOT / "experiments/b_gnn_celltypes/selection_rules.py"), out]
     text = subprocess.run(rules, check=True, cwd=ROOT, capture_output=True, text=True).stdout
     assert "consistency_guarded" in text

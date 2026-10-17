@@ -1,22 +1,22 @@
 """Compare label-free rules for choosing among the candidate labelings of label_free.py.
 
-Each rule sees only the label-free columns of candidates.csv; accuracy is used to score the
-choice. Rules:
+Each rule (flybrain.selection) sees only the label-free columns of candidates.csv; accuracy is
+used to score the choice. Rules:
   consistency          highest type consistency on the scoring graph (the rule used so far)
   consistency_guarded  the same among candidates whose largest predicted type holds at most
                        twice the share of the largest reference type (excludes collapsed ones)
+  size_match           predicted type sizes closest to the reference (smallest Jensen-Shannon
+                       divergence): a misaligned model cannot produce the expected sizes, even
+                       after prior matching
   agreement            highest mean agreement between the seeds' labelings (disagreement
                        between independently trained models tracks their error under shift)
   agreement_guarded    the same with the collapse guard
   rank_mean            best mean rank of consistency and agreement, with the collapse guard
-  size_match           predicted type sizes closest to the reference (smallest Jensen-Shannon
-                       divergence): a misaligned model cannot produce the expected sizes, even
-                       after prior matching
-  rank_size_agreement  best mean rank of size match and agreement
+  size_agreement       best mean rank of size match and agreement
   rank_all             best mean rank of consistency, agreement and size match
 
 Prints and writes, per run and label: the accuracy of the best candidate (post hoc) and, per
-rule, the accuracy of its choice and the gap to the best.
+rule, the accuracy of its choice, plus the mean and worst gap to the best.
 
 Usage: python experiments/b_gnn_celltypes/selection_rules.py RUN [RUN ...] [--out file.md]
        (RUN: a results subdirectory written by label_free.py)
@@ -28,34 +28,8 @@ import argparse
 
 import pandas as pd
 
+from flybrain.selection import choose_all
 from flybrain.utils import REPO_ROOT
-
-
-def guard(c: pd.DataFrame) -> pd.DataFrame:
-    ok = c[c.top_share <= 2 * c.ref_top_share]
-    return ok if len(ok) else c
-
-
-def scoring_column(c: pd.DataFrame) -> str:
-    cols = [k for k in c.columns if k.startswith("consistency_")]
-    return "consistency_raw" if "consistency_raw" in cols else cols[0]
-
-
-def choose(c: pd.DataFrame) -> dict[str, pd.Series]:
-    key = scoring_column(c)
-    g = guard(c)
-    chosen = {"consistency": c.loc[c[key].idxmax()], "consistency_guarded": g.loc[g[key].idxmax()]}
-    chosen["size_match"] = c.loc[c.size_js.idxmin()]
-    if c.pairwise_agreement.notna().any():  # needs several seeds
-        ranks = g[key].rank(ascending=False) + g.pairwise_agreement.rank(ascending=False)
-        chosen["agreement"] = c.loc[c.pairwise_agreement.idxmax()]
-        chosen["agreement_guarded"] = g.loc[g.pairwise_agreement.idxmax()]
-        chosen["rank_mean"] = g.loc[ranks.idxmin()]
-        size_rank = c.size_js.rank()
-        two = size_rank + c.pairwise_agreement.rank(ascending=False)
-        chosen["rank_size_agreement"] = c.loc[two.idxmin()]
-        chosen["rank_all"] = c.loc[(two + c[key].rank(ascending=False)).idxmin()]
-    return chosen
 
 
 def main() -> None:
@@ -71,8 +45,7 @@ def main() -> None:
                 print(f"skipping {path}: written before the agreement columns")
                 continue
             row = {"run": run, "label": path.parent.name, "best": c.acc.max()}
-            for rule, chosen in choose(c).items():
-                row[rule] = chosen.acc
+            row.update({rule: c.acc[i] for rule, i in choose_all(c).items()})
             rows.append(row)
     df = pd.DataFrame(rows)
     rules = [k for k in df.columns if k not in ("run", "label", "best")]
