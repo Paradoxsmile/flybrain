@@ -9,6 +9,9 @@ choice. Rules:
                        between independently trained models tracks their error under shift)
   agreement_guarded    the same with the collapse guard
   rank_mean            best mean rank of consistency and agreement, with the collapse guard
+  size_match           predicted type sizes closest to the reference (smallest Jensen-Shannon
+                       divergence): a misaligned model cannot produce the expected sizes, even
+                       after prior matching
 
 Prints and writes, per run and label: the accuracy of the best candidate (post hoc) and, per
 rule, the accuracy of its choice and the gap to the best.
@@ -40,6 +43,7 @@ def choose(c: pd.DataFrame) -> dict[str, pd.Series]:
     key = scoring_column(c)
     g = guard(c)
     chosen = {"consistency": c.loc[c[key].idxmax()], "consistency_guarded": g.loc[g[key].idxmax()]}
+    chosen["size_match"] = c.loc[c.size_js.idxmin()]
     if c.pairwise_agreement.notna().any():  # needs several seeds
         ranks = g[key].rank(ascending=False) + g.pairwise_agreement.rank(ascending=False)
         chosen["agreement"] = c.loc[c.pairwise_agreement.idxmax()]
