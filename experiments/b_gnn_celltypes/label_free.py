@@ -331,9 +331,8 @@ def main() -> None:
     default = DEFAULT_OUT.get(pair, f"label_free_{args.source}_{args.target}")
     if degraded or args.max_weight:
         default = f"label_free_{args.source}_{args.target}_r{args.target_retention:g}"
-        default += "_x" * bool(args.target_exclude) + f"_w{args.max_weight:g}" * bool(
-            args.max_weight
-        )
+        default += "_x" if args.target_exclude else ""
+        default += f"_w{args.max_weight:g}" if args.max_weight else ""
     args.out = args.out or default
     out_dir = REPO_ROOT / "results" / args.out
     sels = [run_label(label, args, out_dir) for label in args.labels]
