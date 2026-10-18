@@ -7,7 +7,7 @@
 
 Machine learning on the *Drosophila* connectome: how much of a neuron's identity is encoded in its wiring alone, and what does connectome-constrained modelling of the fly visual system tell us about the role of wiring?
 
-> Status: part b has results on FlyWire (FAFB v783), including a cross-hemisphere test, a replication within the male CNS (MCNS v1.0) and a fully label-free FAFB → MCNS transfer (92.6 % over 394 cell types; 83.4 % when run unchanged from MCNS to FAFB), and an independent test on a third connectome (BANC) with a protocol fixed in advance, where part of the pipeline did not hold up. Part c is open.
+> Status: part b has results on FlyWire (FAFB v783), including a cross-hemisphere test, a replication within the male CNS (MCNS v1.0) and a fully label-free FAFB → MCNS transfer (92.6 % over 394 cell types; 83.4 % when run unchanged from MCNS to FAFB), and two pre-registered tests on further connectomes: BANC (sparser; the selection rule failed and was revised on a development sandbox) and the hemibrain (a partial volume, which the transferred GNN cannot type: 19.6 % on cell types). Part c is open.
 
 ## Motivation
 
@@ -216,6 +216,27 @@ The failures on BANC show that the label-free choices need a test bed with known
 - Missing types cost little: without R1-6 the best candidate loses 1.1 points, and prior matching still adds 11 points. Bounding prior matching (`--max-weight 10`) cuts the neurons wrongly assigned to the missing type from 7,833 to 2,627 but costs 0.5 points accuracy and 0.06 macro-F1, so it is not used.
 - The sandbox covers only density and missing types, and the rule was chosen from 14 cases; its worst case on BANC (6.3 points) comes from the exploratory run with density-matched GNNs. It needs a new connectome to be tested on.
 
+### Partial volumes, and a second pre-registered test on the hemibrain
+
+The hemibrain (Scheffer et al., 2020) covers the central brain, mostly of the right hemisphere, without the optic lobes; 16 % of its neurons are cut by the volume boundary. 77 % of FAFB's labeled neurons belong to types it does not contain, which breaks the assumption shared by prior matching, the size-based selection rule and normalization by the target's own statistics: that the target has the source's composition.
+
+**Development sandbox.** MCNS restricted to the central brain, with 16 % of its neurons cropped (each synapse of a cropped neuron kept with probability 0.1), labels known. For the same central-brain neurons, the best candidate falls from 69.9 % (full MCNS volume) to 46.9 % (partial volume) and 36.3 % (partial and cropped): partners outside the volume carry about 23 points, cropping about 10. Two fixes were tested. A **coverage prior** (`flybrain/coverage.py`) uses the type distribution of the FAFB neurons inside the covered volume (those with at least 10 % of their synapses outside the optic-lobe neuropils), which needs only the list of covered neuropils; it raised the best candidate from 30.5 to 36.3 %, and the size-based rule then chose it. Estimating the target's type sizes by EM (Saerens et al., 2002) amplified the classifier's errors (23.1 %), and a normalization against the covered part of the source did not beat the source normalization.
+
+**Pre-registered test.** Protocol committed before any model ran on the hemibrain ([docs/hemibrain_protocol.md](docs/hemibrain_protocol.md), `161cf7b`). The harmonized edgelist repeats rows (931,329 exact copies), which are dropped; within its volume the hemibrain then has FAFB's density (26.7 connections and 387 synapses per neuron at 5 synapses; FAFB: 26.8 and 364). Labels: hemibrain types that are among the 434 FAFB types (7,639 neurons, 202 types).
+
+| Label | Chosen (alignment, norm., rho) | Without prior matching | With prior matching | **+ NTAC** | Best candidate (post hoc) | Old consistency rule |
+|---|---|---|---|---|---|---|
+| cell types | `raw`, source, 1 | 17.3 / 0.09 | 19.1 / 0.09 | **19.6 / 0.09** | 25.5 | 7.8 |
+| super classes | `raw`, source, 0.5 | 72.8 / 0.20 | 74.3 / 0.20 | **74.4 / 0.19** | 78.4 | 72.8 |
+
+1. **Selected candidate within 5 points of the best: met for super classes (4.1), not for cell types (6.4).** The old consistency rule would have chosen 7.8 %.
+2. **The coverage prior gives a better best candidate than the source prior: met, but by little for cell types** (25.5 vs. 24.9 %). For super classes it matters most after selection: with the source prior the pipeline forces the expected optic-lobe classes onto central-brain neurons and ends at 34.5 % (74.4 % with the coverage prior).
+3. **Complete neurons are typed better than cropped ones: met** (22.8 vs. 12.2 % on cell types, 76.1 vs. 65.5 % on super classes, after NTAC).
+4. **Cell-type accuracy below 60 %: met** (19.6 %).
+
+- **A partial volume is beyond what the transferred GNN can type.** Super-class accuracy (74.4 %) is barely above always predicting the most frequent class (73.1 %). Visual projection neurons, whose dendrites lie in the missing optic lobe, are typed correctly in 5 % of cases; central-brain neurons in 28 % (38 % for the best candidate).
+- The label-free safeguards still matter: without the coverage prior and the new rule, the pipeline would end at 34.5 % (super classes) and 7.8 % (cell types).
+
 ### GNN-seeded NTAC: combining both
 
 NTAC needs labeled partners, the GNN does not. Seeding NTAC with the predictions on which three GNNs agree (`hybrid.py`) labels the neurons that have no labeled partners better than the GNNs alone. Cell types, accuracy (%) / macro-F1 on the scored neurons (the unlabeled hemisphere, or all labeled MCNS neurons for the transfer):
@@ -240,8 +261,8 @@ Related work and how this project relates to it: [docs/literature.md](docs/liter
 - Only types with ≥ 20 neurons are predicted (434 of 8,772 types); the many rare types are left out.
 - The setting is transductive: the whole graph is visible during training, only the labels of validation and test neurons are hidden.
 - Two animals of different sex, reconstructed and annotated by different teams. MCNS labels come from Janelia's `flywireType` mapping; 40 of the 434 FAFB types do not occur in it (some are split differently, e.g. Dm8a/b vs. yDm8/pDm8), and 2,751 neurons with several mapped types are not scored (a prediction falls within their type list for only 3–4 % of them).
-- The label-free pipeline (type-consistency selection, prior matching) was developed on the FAFB → MCNS pair while looking at its transfer errors. Run unchanged in the reverse direction it still helps (83.4 % on cell types vs. at most 78.5 % without prior matching). In the independent test on BANC, prior matching carried over but the selection by type consistency failed in three of four runs (see above). The revised rule (type sizes + seed agreement) was chosen on a sandbox of the same two development connectomes and still needs a connectome it has not seen.
-- Prior matching assumes that type sizes are similar across flies; sex-specific and dimorphic types (about 5 % of the central brain) violate this.
+- The label-free pipeline (type-consistency selection, prior matching) was developed on the FAFB → MCNS pair while looking at its transfer errors. Run unchanged in the reverse direction it still helps (83.4 % on cell types vs. at most 78.5 % without prior matching). In the independent test on BANC, prior matching carried over but the selection by type consistency failed in three of four runs (see above). The revised rule (type sizes + seed agreement) was chosen on a sandbox of the same two development connectomes; on the hemibrain it stayed within 4.1 points of the best candidate for super classes but missed it by 6.4 points for cell types.
+- Prior matching assumes that type sizes are similar across flies; sex-specific and dimorphic types (about 5 % of the central brain) violate this. For partial volumes the coverage prior needs the list of covered neuropils, and the transfer itself fails (hemibrain).
 - Each seed changes both the data split and the initialization; the std covers both.
 - The cell-type GNN is trained for 300 epochs and its best epoch is close to the end, so it may be slightly underestimated.
 - Codex drops connections with fewer than 5 synapses. The thinned FAFB copies therefore cannot contain the weak connections that a sparse reconstruction still has, and they overstate what a density-matched source gains on BANC.
