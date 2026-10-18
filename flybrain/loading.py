@@ -14,6 +14,7 @@ import torch
 from torch_geometric.data import Data
 
 from flybrain.features import degree_features
+from flybrain.thinning import thin_counts
 from flybrain.utils import REPO_ROOT
 
 RAW_DIR = REPO_ROOT / "data" / "raw"
@@ -31,6 +32,7 @@ POST_COL = "post_root_id"
 WEIGHT_COL = "syn_count"
 CELL_TYPE_SRC_COL = "primary_type"  # column in the cell-types table, merged in as "cell_type"
 LABEL_COLS = ("super_class", "cell_type")
+MIN_COUNT = 5  # Codex threshold of the FAFB connections
 
 
 def find_raw_file(raw_dir: Path, stems: str | tuple[str, ...]) -> Path | None:
@@ -137,7 +139,9 @@ def build_graph(
     `label_names`, labels are coded in that label space instead (see encode_labels).
 
     Attributes: x (degree features), edge_index, edge_weight, y, node_ids, label_names, and
-    side (array of "left" / "right" / "center" / "", if the neurons table has a side column).
+    side (array of "left" / "right" / "center" / "", if the neurons table has a side column);
+    flywire_types (MCNS), region and morph_type (BANC), cropped (hemibrain) likewise, as string
+    arrays.
     """
     neurons, connections = clean_tables(neurons, connections)
     index = pd.Series(np.arange(len(neurons)), index=neurons[ID_COL])
@@ -157,10 +161,53 @@ def build_graph(
     )
     data.node_ids = torch.from_numpy(neurons[ID_COL].to_numpy().copy())
     data.label_names = names
-    for col in ("side", "flywire_types"):  # flywire_types: MCNS only, may list several types
+    for col in ("side", "flywire_types", "region", "morph_type", "cropped"):
         if col in neurons.columns:
             setattr(data, col, neurons[col].astype("string").fillna("").to_numpy(dtype=str))
     return data
+
+
+CROP_RETENTION = 0.1  # cropped hemibrain neurons: median 30 vs. 340 input synapses
+
+
+def degrade_tables(
+    neurons: pd.DataFrame,
+    connections: pd.DataFrame,
+    retention: float = 1.0,
+    seed: int = 0,
+    exclude_types: tuple = (),
+    min_count: int | None = MIN_COUNT,
+    exclude_super_classes: tuple = (),
+    crop_fraction: float = 0.0,
+    crop_retention: float = CROP_RETENTION,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """A less complete copy of a connectome, for development with known labels.
+
+    Neurons of `exclude_types` (cell_type) or `exclude_super_classes` are removed (a partial
+    volume); synapse counts are binomially thinned with `retention` (flybrain.thinning); a
+    random `crop_fraction` of the remaining neurons is cropped, i.e. their connections keep
+    each synapse only with probability crop_retention (per cropped end), as for neurons cut by
+    the volume boundary; with min_count, connections with fewer remaining synapses are
+    dropped."""
+    drop = neurons["cell_type"].isin(list(exclude_types))
+    drop |= neurons["super_class"].isin(list(exclude_super_classes))
+    neurons = neurons[~drop]
+    if retention == 1.0 and crop_fraction == 0.0:
+        return neurons, connections
+    rng = np.random.default_rng(seed)
+    if crop_fraction > 0.0:
+        cropped = neurons[ID_COL].to_numpy()[rng.random(len(neurons)) < crop_fraction]
+        ends = connections[PRE_COL].isin(cropped).to_numpy().astype(int)
+        ends = ends + connections[POST_COL].isin(cropped).to_numpy().astype(int)
+        p = retention * crop_retention**ends
+        counts = connections[WEIGHT_COL].to_numpy().round().astype(np.int64)
+        counts = rng.binomial(counts, p)
+    else:
+        counts = thin_counts(connections[WEIGHT_COL].to_numpy(), retention, seed)
+    connections = connections.assign(**{WEIGHT_COL: counts})
+    if min_count is not None:
+        connections = connections[connections[WEIGHT_COL] >= min_count]
+    return neurons, connections
 
 
 def load_graph(
@@ -172,29 +219,71 @@ def load_graph(
     min_class_size: int = 1,
     dataset: str = "fafb",
     mcns_variant: str = "density",
+    banc_variant: str = "raw",
+    hemibrain_variant: str = "raw",
+    retention: float = 1.0,
+    retention_seed: int = 0,
+    exclude_types: tuple = (),
+    exclude_super_classes: tuple = (),
+    crop_fraction: float = 0.0,
 ) -> Data:
     """Load the real graph (raw -> Parquet cache -> Data), or a synthetic one if requested.
 
     dataset="mcns" loads the male CNS brain (flybrain.mcns, preprocessing `mcns_variant`) with
     its labels coded in the FAFB label space (FAFB classes with >= min_class_size neurons), so
-    class indices mean the same in both graphs. With synthetic=True, a second synthetic graph
-    stands in for MCNS.
+    class indices mean the same in both graphs; dataset="banc" likewise loads the BANC brain
+    (flybrain.banc, preprocessing `banc_variant`) and dataset="hemibrain" the hemibrain
+    (flybrain.hemibrain, `hemibrain_variant`). With synthetic=True, other synthetic graphs
+    stand in for them.
+
+    retention < 1, exclude_types, exclude_super_classes or crop_fraction give a less complete
+    copy (degrade_tables; for MCNS and BANC before the variant's threshold), labeled in the
+    label space of the full FAFB graph.
     """
-    if dataset not in ("fafb", "mcns"):
-        raise ValueError(f"dataset must be 'fafb' or 'mcns', got {dataset!r}")
+    offsets = {"fafb": 0, "mcns": 1000, "banc": 2000, "hemibrain": 3000}  # synthetic
+    if dataset not in offsets:
+        raise ValueError(f"dataset must be one of {sorted(offsets)}, got {dataset!r}")
+    degrade = {
+        "retention": retention,
+        "seed": retention_seed,
+        "exclude_types": exclude_types,
+        "exclude_super_classes": exclude_super_classes,
+        "crop_fraction": crop_fraction,
+    }
+    full = retention == 1.0 and not exclude_types and not exclude_super_classes
+    full = full and crop_fraction == 0.0
     if synthetic:
         from flybrain.synthetic import make_synthetic_tables
 
         fafb = make_synthetic_tables(seed=seed)
-        if dataset == "fafb":
+        if dataset == "fafb" and full:
             return build_graph(*fafb, label_col, min_class_size)
         names = encode_labels(fafb[0][label_col], min_class_size)[1]
-        return build_graph(*make_synthetic_tables(seed=seed + 1000), label_col, 1, names)
+        other = fafb if dataset == "fafb" else make_synthetic_tables(seed=seed + offsets[dataset])
+        other = degrade_tables(*other, **degrade)
+        return build_graph(*other, label_col, 1, names)
     fafb_neurons, connections = load_tables(raw_dir, processed_dir)
-    if dataset == "fafb":
+    if dataset == "fafb" and full:
         return build_graph(fafb_neurons, connections, label_col, min_class_size)
-    from flybrain.mcns import load_mcns_tables
-
     names = encode_labels(fafb_neurons[label_col], min_class_size)[1]
-    neurons, connections = load_mcns_tables(mcns_variant, raw_dir / "mcns", processed_dir)
+    if dataset == "fafb":
+        neurons, connections = degrade_tables(fafb_neurons, connections, **degrade)
+    elif dataset == "mcns":
+        from flybrain.mcns import load_mcns_tables
+
+        neurons, connections = load_mcns_tables(
+            mcns_variant, raw_dir / "mcns", processed_dir, None if full else degrade
+        )
+    elif dataset == "banc":
+        from flybrain.banc import load_banc_tables
+
+        neurons, connections = load_banc_tables(
+            banc_variant, raw_dir / "banc", processed_dir, None if full else degrade
+        )
+    else:
+        from flybrain.hemibrain import load_hemibrain_tables
+
+        neurons, connections = load_hemibrain_tables(
+            hemibrain_variant, raw_dir / "hemibrain", processed_dir, None if full else degrade
+        )
     return build_graph(neurons, connections, label_col, 1, names)
