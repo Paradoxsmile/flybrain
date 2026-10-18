@@ -77,6 +77,8 @@ def model_paths(models: str, label: str, retention: float = 1.0) -> list:
     """model.pt files of transfer.py (<models>/<label>/gnn/s*) or, for a thinned source, of
     thinning.py (<models>/<label>/p<retention>/s*)."""
     sub = "gnn" if retention == 1.0 else f"p{retention}"
+    if retention == 1.0 and not (REPO_ROOT / "results" / models / label / sub).exists():
+        sub = "p1.0"  # full-density models of thinning.py (e.g. with --thin-aug)
     paths = sorted((REPO_ROOT / "results" / models / label / sub).glob("s*/model.pt"))
     if not paths:
         raise FileNotFoundError(f"no model.pt under results/{models}/{label}/{sub}")
