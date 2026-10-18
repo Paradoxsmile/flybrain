@@ -136,6 +136,12 @@ def test_label_free_synthetic_runs():
     sel = json.loads((out / "selected.json").read_text())
     assert {"chosen", "selected_acc", "refined_acc", "no_adaptation_acc"} <= set(sel)
     assert len(pd.read_csv(out / "candidates.csv")) == 2 * 5  # 2 normalizations x 5 rho
+    pred = pd.read_parquet(out / "predictions.parquet")
+    labeled = pred[pred.label.notna()]
+    for col, key in (("pred", "refined_acc"), ("pred_selected", "selected_acc")):
+        assert abs((labeled[col] == labeled.label).mean() - sel[key]) < 1e-9
+    no_adaptation = (labeled.pred_no_adaptation == labeled.label).mean()
+    assert abs(no_adaptation - sel["no_adaptation_acc"]) < 1e-9
 
 
 def test_reverse_transfer_and_label_free_synthetic_run():

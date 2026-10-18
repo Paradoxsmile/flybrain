@@ -44,10 +44,13 @@ def log_run(run_dir: Path, config: dict[str, Any], metrics: dict[str, Any]) -> N
     (run_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
 
 
-def write_predictions(path: Path, data, pred: np.ndarray, masks: tuple) -> None:
+def write_predictions(
+    path: Path, data, pred: np.ndarray, masks: tuple, extra: dict | None = None
+) -> None:
     """Write one row per neuron: root_id, side (if known), true and predicted label, split.
 
-    pred: predicted class index per neuron; masks: boolean (train, val, test) tensors.
+    pred: predicted class index per neuron; masks: boolean (train, val, test) tensors;
+    extra: further labelings (column name -> class index per neuron), written as names.
     """
     names = np.array(list(data.label_names) + [None], dtype=object)  # index -1 -> None
     split = np.full(data.num_nodes, "", dtype=object)
@@ -61,6 +64,8 @@ def write_predictions(path: Path, data, pred: np.ndarray, masks: tuple) -> None:
             "split": split,
         }
     )
+    for col, labeling in (extra or {}).items():
+        df[col] = names[np.asarray(labeling)]
     if getattr(data, "side", None) is not None:
         df.insert(1, "side", data.side)
     df.to_parquet(path, index=False)

@@ -32,7 +32,8 @@ share of the largest one, Jensen-Shannon divergence of the predicted type sizes 
 reference, agreement between the seeds' labelings), to compare selection rules
 (selection_rules.py).
 
-Writes results/<out>/<label>/candidates.csv, selected.json, predictions.parquet and summary.md.
+Writes results/<out>/<label>/candidates.csv, selected.json, predictions.parquet (per neuron: the
++ NTAC labeling, and the chosen candidate without and with prior matching) and summary.md.
 
 Usage: python experiments/b_gnn_celltypes/label_free.py [--models transfer2] [--score-all]
        python experiments/b_gnn_celltypes/label_free.py --source mcns --target fafb
@@ -230,6 +231,37 @@ def type_prior(p, ref, args, covered) -> tuple[np.ndarray, np.ndarray]:
     return shares, prior_weights(p, shares * len(p), max_weight=args.max_weight)
 
 
+def seed_outputs(paths, src, tgt, norm: str, args, covered: dict) -> tuple[list, list, list]:
+    """Per seed: class probabilities on the target, prior-matching weights, expected type
+    shares. covered: coverage weights per source graph (id), if --coverage."""
+    seed_probs, seed_weights, refs = [], [], []
+    for path in paths:
+        model, cfg, names = load_model(path)
+        assert names == src.label_names == tgt.label_names
+        train = make_split(src, "random", seed=cfg["seed"])[0]
+        ref = probabilities(model, cfg, src, normalize_features(src.x, "global", train))
+        x = target_features(tgt, src, train, norm, covered.get(id(src)))
+        p = probabilities(model, cfg, tgt, x)
+        shares, weights = type_prior(p, ref, args, covered.get(id(src)))
+        seed_weights.append(weights)
+        seed_probs.append(p.astype(np.float32))
+        refs.append(shares)
+    return seed_probs, seed_weights, refs
+
+
+def adjusted(seed_probs: list, seed_weights: list, rho: float) -> tuple[np.ndarray, list]:
+    """Ensemble labeling (argmax of the mean adjusted probabilities) and each seed's labeling,
+    with prior matching of strength rho."""
+    total = np.zeros_like(seed_probs[0])
+    seed_preds = []
+    for p, v in zip(seed_probs, seed_weights, strict=True):
+        q = p * (v**rho).astype(np.float32)
+        q /= q.sum(axis=1, keepdims=True)
+        total += q
+        seed_preds.append(q.argmax(axis=1))
+    return total.argmax(axis=1), seed_preds
+
+
 def run_label(label: str, args, out_dir) -> dict:
     cases, graphs, scoring_key = setups(label, args)
     targets = {name: tgt for name, _, _, tgt in cases}
@@ -244,29 +276,10 @@ def run_label(label: str, args, out_dir) -> dict:
         if args.coverage and id(src) not in covered:
             covered[id(src)] = coverage_weights(src.node_ids.numpy(), args.coverage)
         assert tgt.num_nodes == len(y)
-        seed_probs, seed_weights, refs = [], [], []  # per seed
-        for path in paths:
-            model, cfg, names = load_model(path)
-            assert names == src.label_names == tgt.label_names
-            train = make_split(src, "random", seed=cfg["seed"])[0]
-            ref = probabilities(model, cfg, src, normalize_features(src.x, "global", train))
-            x = target_features(tgt, src, train, norm, covered.get(id(src)))
-            p = probabilities(model, cfg, tgt, x)
-            shares, weights = type_prior(p, ref, args, covered.get(id(src)))
-            seed_weights.append(weights)
-            seed_probs.append(p.astype(np.float32))
-            refs.append(shares)
+        seed_probs, seed_weights, refs = seed_outputs(paths, src, tgt, norm, args, covered)
         reference = np.mean(refs, axis=0)
         for rho in RHOS:
-            total = np.zeros_like(seed_probs[0])
-            seed_preds = []
-            for p, v in zip(seed_probs, seed_weights, strict=True):
-                q = p * (v**rho).astype(np.float32)
-                q /= q.sum(axis=1, keepdims=True)
-                total += q
-                seed_preds.append(q.argmax(axis=1))
-            ensemble = total.argmax(axis=1)
-            del total
+            ensemble, seed_preds = adjusted(seed_probs, seed_weights, rho)
             preds[(name, norm, rho)] = seed_preds
             ensembles[(name, norm, rho)] = ensemble
             row = {"variant": name, "norm": norm, "rho": rho}
@@ -353,7 +366,8 @@ def run_label(label: str, args, out_dir) -> dict:
     (d / "selected.json").write_text(json.dumps(sel, indent=2))
     lab = torch.from_numpy(y >= 0)
     none = torch.zeros_like(lab)
-    write_predictions(d / "predictions.parquet", g, refined, (none, none, lab))
+    extra = {f"pred_{key}": labelings[key] for key in ("no_adaptation", "selected")}
+    write_predictions(d / "predictions.parquet", g, refined, (none, none, lab), extra=extra)
     print(f"[label_free] {label} selected: {json.dumps(sel)}", flush=True)
     return sel
 

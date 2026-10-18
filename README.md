@@ -34,6 +34,7 @@ FlyWire (FAFB) and MCNS data are released under CC-BY. Raw files are **not** in 
 - **Transfer** (`transfer.py`): methods are trained on FAFB as in the benchmark and applied to MCNS without any MCNS label, with features normalized by FAFB statistics (`source`) or by MCNS's own (`target`). `--source mcns` trains on MCNS (one alignment per run) and applies to FAFB.
 - **GNN-seeded NTAC** (`hybrid.py`): neurons on which three GNNs (seeds) agree become NTAC seeds, together with any truly known labels; NTAC labels the rest. Nothing is tuned (unanimous predictions; NTAC defaults: 15 steps, learning rate 0.3).
 - **Label-free transfer** (`label_free.py`): every transfer choice is made without labels of the target connectome. Type sizes are matched to the reference (`flybrain/adapt.py`), and the alignment, normalization and matching strength are chosen by a label-free type-consistency score (`flybrain/consistency.py`); see below. `--source mcns --target fafb` runs the same pipeline from MCNS to FAFB, `--target banc` to BANC (protocol fixed in advance: [docs/banc_protocol.md](docs/banc_protocol.md)).
+- **Stratified accuracy** (`stratify.py`): accuracy and macro-F1 of the reported label-free runs by region of the type and by FAFB type size, at each stage of the pipeline, from the saved predictions (no retraining).
 - **Benchmark:** `benchmark.py` runs every method on every label and split for three seeds and writes `results/benchmark/summary.md` (`--dataset mcns`: the same within MCNS). All runs log config, metrics and per-neuron predictions to `results/<run_name>/`.
 - **Part c:** plan only, see [experiments/c_constrained_rnn](experiments/c_constrained_rnn/README.md).
 
@@ -159,6 +160,75 @@ The pipeline scores every combination of alignment (3), normalization (2) and rh
 - **Both label-free components carry over.** Prior matching helps in all six alignment × normalization combinations (best rho 0.5–1 in each; +9.3 points for the chosen one), and the consistency score again ranks the 30 labelings like their accuracy (Spearman 0.87 for cell types, 0.80 for super classes). Its choice is 1.6 points below the best candidate (0.2 in the forward direction) and above every candidate without prior matching (at most 78.5 %). The single GNN with a label-free normalization reaches 60–74 %.
 - **The level is lower:** 83.4 % vs. 95.2 % within FAFB, a gap of 12 points (forward: 4). Three error sources are specific to FAFB as the target. 2.2 % of its neurons belong to the 40 types missing from MCNS's mapping (Dm8a/b, ocellar retinula cells, several Johnston's organ types) and cannot be predicted; on the 394 shared types accuracy is 85.3 % (macro-F1 0.78). Photoreceptors (R1-6, R7, R8; 10 % of the neurons) cause 21 % of the errors: 51 % of them are typed correctly in the left FAFB hemisphere and 83 % in the right, the neurons that also make FAFB right → left typing 8 points worse (in the forward direction, 95.6 % of MCNS photoreceptors are correct). Kenyon cell subtypes cause 15 % (1,606 KCg-m predicted as KCab), the confusion that also remains in the forward direction. On shared types without photoreceptors, 87.5 % are correct.
 - Super classes: the score picks the best candidate and, as in the forward direction, no prior matching (rho 0).
+
+### Where the transfer accuracy comes from: region and type size
+
+The overall accuracy is dominated by the optic lobe: 80 % of MCNS's labeled neurons (71 % of FAFB's and BANC's) belong to optic-lobe intrinsic types, most of them large columnar types. `stratify.py` splits each label-free cell-type run reported here and in the sections below by the region of the neuron's true type (its FAFB super class) and by the type's size in FAFB, at the three stages of the pipeline. It reads the saved predictions and retrains nothing; for runs that saved only the + NTAC labeling, the two earlier stages are recomputed with the saved GNNs for the chosen candidate and checked against `selected.json` (`results/stratified/`). Accuracy % / macro-F1, where macro-F1 is the mean, over the stratum's types present in the target, of each type's F1 on the whole target. The "all" column therefore gives a slightly higher macro-F1 than the tables above (0.81 vs. 0.76 for FAFB → MCNS), which also count predicted types absent from the target.
+
+| Run | Stage | all | optic-lobe intrinsic | visual projection | central brain | sensory | other |
+|---|---|---|---|---|---|---|---|
+| **FAFB → MCNS** | share of labeled neurons | 109,901 neurons | 80 % | 7 % | 6 % | 7 % | 0.2 % |
+| | without prior matching | 87.6 / 0.73 | 92.9 / 0.91 | 86.4 / 0.84 | 52.6 / 0.63 | 55.4 / 0.21 | 88.2 / 0.74 |
+| | with prior matching | 91.2 / 0.79 | 95.6 / 0.94 | 94.0 / 0.92 | 63.9 / 0.77 | 59.8 / 0.29 | 90.7 / 0.76 |
+| | + NTAC | 92.6 / 0.81 | 97.2 / 0.96 | 95.7 / 0.96 | 65.1 / 0.80 | 59.1 / 0.26 | 95.4 / 0.73 |
+| **MCNS → FAFB** | share of labeled neurons | 108,647 neurons | 71 % | 6 % | 7 % | 15 % | 0.4 % |
+| | without prior matching | 72.0 / 0.57 | 78.5 / 0.78 | 73.2 / 0.73 | 35.5 / 0.38 | 59.5 / 0.20 | 46.7 / 0.40 |
+| | with prior matching | 81.3 / 0.68 | 90.2 / 0.86 | 85.7 / 0.83 | 51.5 / 0.51 | 52.7 / 0.36 | 48.3 / 0.38 |
+| | + NTAC | 83.4 / 0.69 | 92.6 / 0.90 | 87.8 / 0.86 | 54.0 / 0.52 | 53.6 / 0.31 | 52.8 / 0.41 |
+| **FAFB → BANC** | share of labeled neurons | 63,332 neurons | 71 % | 9 % | 8 % | 12 % | 0.3 % |
+| | without prior matching | 38.2 / 0.22 | 44.0 / 0.32 | 31.5 / 0.22 | 10.7 / 0.16 | 26.1 / 0.03 | 57.8 / 0.42 |
+| | with prior matching | 55.7 / 0.39 | 62.0 / 0.47 | 56.8 / 0.45 | 36.9 / 0.37 | 28.2 / 0.15 | 70.2 / 0.48 |
+| | + NTAC | 61.7 / 0.42 | 68.6 / 0.52 | 63.1 / 0.51 | 44.2 / 0.38 | 30.3 / 0.14 | 77.6 / 0.50 |
+| **MCNS → BANC** | share of labeled neurons | 63,332 neurons | 71 % | 9 % | 8 % | 12 % | 0.3 % |
+| | without prior matching | 1.4 / 0.00 | 1.8 / 0.00 | 0.0 / 0.00 | 0.3 / 0.00 | 1.1 / 0.00 | 0.0 / 0.00 |
+| | with prior matching | 1.4 / 0.00 | 1.8 / 0.00 | 0.0 / 0.00 | 0.3 / 0.00 | 1.1 / 0.00 | 0.0 / 0.00 |
+| | + NTAC | 1.4 / 0.00 | 1.8 / 0.00 | 0.0 / 0.00 | 0.5 / 0.00 | 0.7 / 0.00 | 0.0 / 0.00 |
+| **FAFB → hemibrain** | share of labeled neurons | 7,639 neurons | 2 % | 35 % | 32 % | 30 % | 0.2 % |
+| | without prior matching | 17.3 / 0.15 | 0.0 / 0.00 | 3.1 / 0.01 | 33.6 / 0.32 | 18.5 / 0.15 | 0.0 / 0.00 |
+| | with prior matching | 19.1 / 0.13 | 0.0 / 0.00 | 2.6 / 0.02 | 46.0 / 0.25 | 11.9 / 0.15 | 0.0 / 0.00 |
+| | + NTAC | 19.6 / 0.12 | 0.0 / 0.00 | 5.0 / 0.03 | 44.5 / 0.24 | 12.3 / 0.13 | 0.0 / 0.00 |
+
+| Run | Stage | all | 20–49 | 50–199 | 200–999 | ≥ 1000 |
+|---|---|---|---|---|---|---|
+| **FAFB → MCNS** | share of labeled neurons | 109,901 neurons | 5 % | 13 % | 23 % | 58 % |
+| | without prior matching | 87.6 / 0.73 | 69.2 / 0.62 | 83.2 / 0.77 | 85.2 / 0.81 | 91.1 / 0.90 |
+| | with prior matching | 91.2 / 0.79 | 75.8 / 0.72 | 87.4 / 0.83 | 90.0 / 0.86 | 93.9 / 0.92 |
+| | + NTAC | 92.6 / 0.81 | 77.0 / 0.74 | 88.2 / 0.83 | 92.4 / 0.88 | 95.1 / 0.93 |
+| **MCNS → FAFB** | share of labeled neurons | 108,647 neurons | 6 % | 12 % | 22 % | 60 % |
+| | without prior matching | 72.0 / 0.57 | 51.0 / 0.44 | 74.6 / 0.67 | 66.7 / 0.65 | 75.4 / 0.76 |
+| | with prior matching | 81.3 / 0.68 | 64.4 / 0.56 | 81.0 / 0.77 | 78.1 / 0.76 | 84.1 / 0.85 |
+| | + NTAC | 83.4 / 0.69 | 64.6 / 0.57 | 82.9 / 0.78 | 80.7 / 0.79 | 86.3 / 0.87 |
+| **FAFB → BANC** | share of labeled neurons | 63,332 neurons | 7 % | 15 % | 16 % | 62 % |
+| | without prior matching | 38.2 / 0.22 | 18.5 / 0.14 | 22.6 / 0.23 | 45.4 / 0.32 | 42.5 / 0.41 |
+| | with prior matching | 55.7 / 0.39 | 33.7 / 0.32 | 42.4 / 0.39 | 60.7 / 0.43 | 60.2 / 0.63 |
+| | + NTAC | 61.7 / 0.42 | 35.3 / 0.34 | 46.5 / 0.43 | 66.9 / 0.49 | 67.3 / 0.69 |
+| **MCNS → BANC** | share of labeled neurons | 63,332 neurons | 7 % | 15 % | 16 % | 62 % |
+| | without prior matching | 1.4 / 0.00 | 0.5 / 0.00 | 0.0 / 0.00 | 0.1 / 0.00 | 2.2 / 0.01 |
+| | with prior matching | 1.4 / 0.00 | 0.5 / 0.00 | 0.0 / 0.00 | 0.1 / 0.00 | 2.2 / 0.01 |
+| | + NTAC | 1.4 / 0.00 | 0.8 / 0.00 | 0.0 / 0.00 | 0.0 / 0.00 | 2.1 / 0.01 |
+| **FAFB → hemibrain** | share of labeled neurons | 7,639 neurons | 34 % | 42 % | 12 % | 11 % |
+| | without prior matching | 17.3 / 0.15 | 24.7 / 0.20 | 18.7 / 0.11 | 1.0 / 0.00 | 7.8 / 0.03 |
+| | with prior matching | 19.1 / 0.13 | 20.1 / 0.17 | 10.2 / 0.08 | 1.1 / 0.02 | 68.8 / 0.12 |
+| | + NTAC | 19.6 / 0.12 | 19.3 / 0.16 | 12.1 / 0.08 | 0.3 / 0.01 | 69.2 / 0.12 |
+
+Points of the overall accuracy (+ NTAC) contributed by each region:
+
+| Run | all | optic-lobe intrinsic | visual projection | central brain | sensory | other |
+|---|---|---|---|---|---|---|
+| FAFB → MCNS | 92.6 | 78.0 | 6.6 | 3.7 | 4.1 | 0.2 |
+| MCNS → FAFB | 83.4 | 65.8 | 5.4 | 4.0 | 8.1 | 0.2 |
+| FAFB → BANC | 61.7 | 48.8 | 5.7 | 3.6 | 3.5 | 0.2 |
+| MCNS → BANC | 1.4 | 1.3 | 0.0 | 0.0 | 0.1 | 0.0 |
+| FAFB → hemibrain | 19.6 | 0.0 | 1.8 | 14.2 | 3.7 | 0.0 |
+
+- **78.0 of the 92.6 points of FAFB → MCNS come from optic-lobe intrinsic neurons**, 97.2 % of which are correct. Outside the optic lobe (20 % of the neurons) 74.0 % are correct (macro-F1 0.68); in MCNS → FAFB 60.9 % and in FAFB → BANC 44.9 %.
+- **Central brain, FAFB → MCNS: 65.1 %** (neuron-weighted F1 0.61, macro-F1 0.80). Kenyon cells are 65 % of the central-brain neurons in the label set and 84 % of its errors; the other central-brain types reach 84.5 %. Only 71 central-brain types have at least 20 neurons in FAFB, so the label set excludes most of the central brain to begin with.
+- **Sensory:** photoreceptors are typed well (95.6 % in MCNS), olfactory receptor neurons are not (17.7 %); 33 of the 40 sensory types with F1 below 0.1 are ORN types.
+- **Type size:** accuracy falls from 95.1 % for types with at least 1,000 FAFB neurons to 77.0 % for types with 20–49 (FAFB → MCNS). Size and region are confounded: 33 of the 39 largest types are optic-lobe intrinsic.
+- **Prior matching helps the central brain most** (+11, +16 and +26 points in FAFB → MCNS, MCNS → FAFB and FAFB → BANC), and costs sensory neurons 7 points in MCNS → FAFB.
+- The BANC and hemibrain subsets in their sections group neurons by the dataset's own region of the neuron, not by the super class of the type, hence different numbers (central brain: 33.7 % there vs. 44.2 % for central-brain types here on BANC, 28 % vs. 44.5 % on the hemibrain). On the hemibrain the large-type bin is almost only KCg-m, which prior matching fills; MCNS → BANC is the collapsed labeling (1.4 % everywhere).
+
+![Per-type F1, FAFB → MCNS](paper/figures/type_f1.png)
 
 ### Independent test on BANC, with a protocol fixed in advance
 
