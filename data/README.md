@@ -42,6 +42,17 @@ Download two files from the public BANC bucket (CC BY 4.0; see https://github.co
 
 Base URL: `https://storage.googleapis.com/lee-lab_brain-and-nerve-cord-fly-connectome/compiled_data/banc_888/`. On first use, `flybrain/banc.py` reduces them to the proofread brain neurons and their connections with >= 2 synapses and caches `data/processed/banc_neurons.parquet` and `banc_connections.parquet` (about 17 MB together). The evaluation protocol is fixed in [docs/banc_protocol.md](../docs/banc_protocol.md).
 
+## Hemibrain (v1.2.1, optional, for the partial-volume transfer test)
+
+Two files of the harmonized hemibrain, from the same public bucket (`compiled_data/hemibrain_121/`), into `data/raw/hemibrain/`:
+
+| File | Content | Size |
+|---|---|---|
+| `hemibrain_121_meta.feather` | per-neuron metadata (`cell_type`, `super_class`, `region`, `status`, `cropped`, ...) | 2 MB |
+| `hemibrain_121_simple_edgelist.feather` | `pre`, `post`, `count` (many rows repeated; `flybrain/hemibrain.py` drops the copies) | 92 MB |
+
+On first use, `flybrain/hemibrain.py` reduces them to the traced neurons and their connections with >= 5 synapses (`data/processed/hemibrain_*.parquet`). The evaluation protocol is fixed in [docs/hemibrain_protocol.md](../docs/hemibrain_protocol.md).
+
 ## Processed cache
 
 On first use, `flybrain.loading` cleans the tables (dedupes neurons, sums synapses per pre/post pair, drops unknown ids) and writes `data/processed/neurons.parquet` and `data/processed/connections.parquet`. Delete that folder to rebuild after changing raw files.

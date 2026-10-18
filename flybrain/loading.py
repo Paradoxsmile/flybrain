@@ -140,7 +140,8 @@ def build_graph(
 
     Attributes: x (degree features), edge_index, edge_weight, y, node_ids, label_names, and
     side (array of "left" / "right" / "center" / "", if the neurons table has a side column);
-    flywire_types (MCNS), region and morph_type (BANC) likewise, as string arrays.
+    flywire_types (MCNS), region and morph_type (BANC), cropped (hemibrain) likewise, as string
+    arrays.
     """
     neurons, connections = clean_tables(neurons, connections)
     index = pd.Series(np.arange(len(neurons)), index=neurons[ID_COL])
@@ -160,7 +161,7 @@ def build_graph(
     )
     data.node_ids = torch.from_numpy(neurons[ID_COL].to_numpy().copy())
     data.label_names = names
-    for col in ("side", "flywire_types", "region", "morph_type"):
+    for col in ("side", "flywire_types", "region", "morph_type", "cropped"):
         if col in neurons.columns:
             setattr(data, col, neurons[col].astype("string").fillna("").to_numpy(dtype=str))
     return data
@@ -219,6 +220,7 @@ def load_graph(
     dataset: str = "fafb",
     mcns_variant: str = "density",
     banc_variant: str = "raw",
+    hemibrain_variant: str = "raw",
     retention: float = 1.0,
     retention_seed: int = 0,
     exclude_types: tuple = (),
@@ -230,14 +232,15 @@ def load_graph(
     dataset="mcns" loads the male CNS brain (flybrain.mcns, preprocessing `mcns_variant`) with
     its labels coded in the FAFB label space (FAFB classes with >= min_class_size neurons), so
     class indices mean the same in both graphs; dataset="banc" likewise loads the BANC brain
-    (flybrain.banc, preprocessing `banc_variant`). With synthetic=True, other synthetic graphs
-    stand in for MCNS and BANC.
+    (flybrain.banc, preprocessing `banc_variant`) and dataset="hemibrain" the hemibrain
+    (flybrain.hemibrain, `hemibrain_variant`). With synthetic=True, other synthetic graphs
+    stand in for them.
 
     retention < 1, exclude_types, exclude_super_classes or crop_fraction give a less complete
     copy (degrade_tables; for MCNS and BANC before the variant's threshold), labeled in the
     label space of the full FAFB graph.
     """
-    offsets = {"fafb": 0, "mcns": 1000, "banc": 2000}  # synthetic stand-ins
+    offsets = {"fafb": 0, "mcns": 1000, "banc": 2000, "hemibrain": 3000}  # synthetic
     if dataset not in offsets:
         raise ValueError(f"dataset must be one of {sorted(offsets)}, got {dataset!r}")
     degrade = {
@@ -271,10 +274,16 @@ def load_graph(
         neurons, connections = load_mcns_tables(
             mcns_variant, raw_dir / "mcns", processed_dir, None if full else degrade
         )
-    else:
+    elif dataset == "banc":
         from flybrain.banc import load_banc_tables
 
         neurons, connections = load_banc_tables(
             banc_variant, raw_dir / "banc", processed_dir, None if full else degrade
+        )
+    else:
+        from flybrain.hemibrain import load_hemibrain_tables
+
+        neurons, connections = load_hemibrain_tables(
+            hemibrain_variant, raw_dir / "hemibrain", processed_dir, None if full else degrade
         )
     return build_graph(neurons, connections, label_col, 1, names)

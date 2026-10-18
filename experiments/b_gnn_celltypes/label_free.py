@@ -55,6 +55,7 @@ from flybrain.banc import VARIANTS as BANC_VARIANTS
 from flybrain.consistency import type_consistency
 from flybrain.coverage import COVERAGES, TARGET_EXCLUSIONS, coverage_weights
 from flybrain.features import normalize_features
+from flybrain.hemibrain import VARIANTS as HEMIBRAIN_VARIANTS
 from flybrain.loading import encode_labels, load_graph
 from flybrain.mcns import VARIANTS as MCNS_VARIANTS
 from flybrain.ntac import ntac_from_predictions
@@ -67,8 +68,14 @@ from flybrain.utils import REPO_ROOT, write_predictions
 LABELS = {"super_class": 1, "cell_type": 20}  # min_class_size, as in the configs
 NORMS = ("target", "source")
 RHOS = (0.0, 0.25, 0.5, 0.75, 1.0)
-DATASET_VARIANTS = {"fafb": [None], "mcns": list(MCNS_VARIANTS), "banc": list(BANC_VARIANTS)}
-SCORING = {"fafb": "fafb", "mcns": "raw", "banc": "raw"}  # least preprocessed target graph
+DATASET_VARIANTS = {
+    "fafb": [None],
+    "mcns": list(MCNS_VARIANTS),
+    "banc": list(BANC_VARIANTS),
+    "hemibrain": list(HEMIBRAIN_VARIANTS),
+}
+SCORING = {"fafb": "fafb", "mcns": "raw", "banc": "raw", "hemibrain": "raw"}  # least
+# preprocessed target graph
 DEFAULT_MODELS = {"fafb": "transfer2", "mcns": "transfer_rev"}
 THINNING_SOURCE_SEED = 1  # thinning.py's source realization
 DEFAULT_OUT = {("fafb", "mcns"): "label_free", ("mcns", "fafb"): "label_free_rev"}
@@ -163,9 +170,17 @@ def score(pred, y) -> tuple[float, float]:
 
 
 def breakdown(g, pred, label: str) -> dict:
-    """Accuracy per region and, for cell types, against the morphology-matched type (BANC)."""
+    """Accuracy per region, for cropped and complete neurons (hemibrain) and, for cell types,
+    against the morphology-matched type (BANC)."""
     out = {}
     y = g.y.numpy()
+    cropped = getattr(g, "cropped", None)
+    if cropped is not None:
+        for name, mask in (("cropped", cropped == "cropped"), ("complete", cropped != "cropped")):
+            mask = mask & (y >= 0)
+            if mask.any():
+                out[f"{name}_n"] = int(mask.sum())
+                out[f"{name}_acc"], out[f"{name}_macro_f1"] = score(pred[mask], y[mask])
     for region in sorted(set(getattr(g, "region", [])) - {""}):
         mask = (g.region == region) & (y >= 0)
         if not mask.any():
@@ -372,7 +387,7 @@ def summary_lines(sels: list, source: str, target: str) -> list:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--source", default="fafb", choices=["fafb", "mcns"])
-    p.add_argument("--target", default="mcns", choices=["mcns", "fafb", "banc"])
+    p.add_argument("--target", default="mcns", choices=["mcns", "fafb", "banc", "hemibrain"])
     p.add_argument("--models", default=None, help="results subdirectory (prefix for MCNS)")
     p.add_argument("--labels", nargs="+", default=list(LABELS), choices=list(LABELS))
     p.add_argument("--score-all", action="store_true", help="consistency on all target graphs")
