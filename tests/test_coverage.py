@@ -86,3 +86,26 @@ def test_label_free_with_em_prior_on_a_partial_copy():
     subprocess.run(run, check=True, cwd=ROOT)
     sel = json.loads((ROOT / "results" / out / "super_class/selected.json").read_text())
     assert sel["prior"] == "em" and sel["target_crop"] == 0.2
+
+
+def test_coverage_normalization_matches_the_covered_source():
+    import importlib.util
+
+    import torch
+    from torch_geometric.data import Data
+
+    spec = importlib.util.spec_from_file_location(
+        "label_free", ROOT / "experiments/b_gnn_celltypes/label_free.py"
+    )
+    lf = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lf)
+    rng = np.random.default_rng(0)
+    src = Data(x=torch.from_numpy(rng.normal(0, 1, (200, 3))).float())
+    src.x[:100] += 5.0  # the first half lies inside the covered volume
+    covered = np.r_[np.ones(100), np.zeros(100)]
+    tgt = Data(x=torch.from_numpy(rng.normal(-3, 2, (80, 3))).float())
+    train = torch.ones(200, dtype=torch.bool)
+    x = lf.target_features(tgt, src, train, "coverage", covered)
+    inside = lf.target_features(Data(x=src.x[:100]), src, train, "source", None)
+    torch.testing.assert_close(x.mean(0), inside.mean(0), atol=1e-4, rtol=0)
+    torch.testing.assert_close(x.std(0), inside.std(0), atol=1e-3, rtol=1e-3)

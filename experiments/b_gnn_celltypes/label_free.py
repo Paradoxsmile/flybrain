@@ -184,16 +184,31 @@ def breakdown(g, pred, label: str) -> dict:
     return out
 
 
-def type_prior(p, ref, src, args) -> tuple[np.ndarray, np.ndarray]:
+def target_features(tgt, src, train, norm: str, covered) -> torch.Tensor:
+    """Normalized target features. target: the target's own statistics; source: the source's
+    training statistics; coverage: standardized like target, then given the mean / std of the
+    source neurons inside the covered volume, then normalized like source. Normalizing by the
+    target's own statistics assumes the source's composition; for a partial volume the covered
+    part of the source is the right reference."""
+    if norm == "target":
+        return normalize_features(tgt.x, "global")
+    x = tgt.x
+    if norm == "coverage":
+        inside = src.x[torch.from_numpy(covered > 0)]
+        z = (x - x.mean(0)) / x.std(0).clamp(min=1e-6)
+        x = z * inside.std(0) + inside.mean(0)
+    return normalize_features(x, "global", fit_mask=train, reference=src.x)
+
+
+def type_prior(p, ref, args, covered) -> tuple[np.ndarray, np.ndarray]:
     """(expected type shares on the target, class weights for prior matching).
 
-    source: the shares the GNN predicts on its source; coverage: the same, weighting each
-    source neuron by the share of its synapses in the neuropils the target covers; em:
-    estimated from the target predictions (flybrain.adapt.em_prior)."""
+    source: the shares the GNN predicts on its source; coverage: the same over the source
+    neurons inside the volume the target covers (flybrain.coverage); em: estimated from the
+    target predictions (flybrain.adapt.em_prior)."""
     shares = ref.mean(axis=0)
     if args.prior == "coverage":
-        w = coverage_weights(src.node_ids.numpy(), args.prior_coverage)
-        shares = w @ ref / w.sum()
+        shares = covered @ ref / covered.sum()
     if args.prior == "em":
         shares, weights = em_prior(p, shares)
         return shares, np.maximum(weights, 1e-12)
@@ -208,7 +223,11 @@ def run_label(label: str, args, out_dir) -> dict:
     used_models = sorted({str(m) for _, paths, _, _ in cases for m in paths})
 
     rows, preds, ensembles = [], {}, {}  # keyed by (name, norm, rho)
-    for (name, paths, src, tgt), norm in itertools.product(cases, NORMS):
+    norms = NORMS + (("coverage",) if args.coverage else ())
+    covered = {}  # coverage weights per source graph
+    for (name, paths, src, tgt), norm in itertools.product(cases, norms):
+        if args.coverage and id(src) not in covered:
+            covered[id(src)] = coverage_weights(src.node_ids.numpy(), args.coverage)
         assert tgt.num_nodes == len(y)
         seed_probs, seed_weights, refs = [], [], []  # per seed
         for path in paths:
@@ -216,13 +235,9 @@ def run_label(label: str, args, out_dir) -> dict:
             assert names == src.label_names == tgt.label_names
             train = make_split(src, "random", seed=cfg["seed"])[0]
             ref = probabilities(model, cfg, src, normalize_features(src.x, "global", train))
-            x = (
-                normalize_features(tgt.x, "global")
-                if norm == "target"
-                else normalize_features(tgt.x, "global", fit_mask=train, reference=src.x)
-            )
+            x = target_features(tgt, src, train, norm, covered.get(id(src)))
             p = probabilities(model, cfg, tgt, x)
-            shares, weights = type_prior(p, ref, src, args)
+            shares, weights = type_prior(p, ref, args, covered.get(id(src)))
             seed_weights.append(weights)
             seed_probs.append(p.astype(np.float32))
             refs.append(shares)
@@ -291,7 +306,7 @@ def run_label(label: str, args, out_dir) -> dict:
         "target_coverage": args.target_coverage,
         "target_crop": args.target_crop,
         "prior": args.prior,
-        "prior_coverage": args.prior_coverage,
+        "coverage": args.coverage,
         "models": used_models,
         "select": args.select,
         "chosen": {"variant": chosen[0], "norm": chosen[1], "rho": chosen[2]},
@@ -372,14 +387,21 @@ def main() -> None:
     p.add_argument("--target-coverage", default=None, choices=sorted(TARGET_EXCLUSIONS))
     p.add_argument("--target-crop", type=float, default=0.0, help="share of cropped neurons")
     p.add_argument("--prior", default="source", choices=["source", "coverage", "em"])
-    p.add_argument("--prior-coverage", default=None, choices=sorted(COVERAGES))
+    p.add_argument(
+        "--coverage",
+        default=None,
+        choices=sorted(COVERAGES),
+        help="volume the target covers: adds the coverage normalization, allows --prior coverage",
+    )
     p.add_argument("--synthetic", action="store_true", help="synthetic stand-ins (for tests)")
     p.add_argument("--out", default=None, help="default: label_free[_rev | _<source>_<target>]")
     args = p.parse_args()
     degraded = args.target_retention < 1 or args.target_exclude or args.target_crop > 0
     degraded = degraded or args.target_coverage is not None
-    if args.prior == "coverage" and (args.source != "fafb" or not args.prior_coverage):
-        p.error("--prior coverage needs --source fafb and --prior-coverage")
+    if args.coverage and args.source != "fafb":
+        p.error("--coverage needs --source fafb (FAFB records the neuropil of each synapse)")
+    if args.prior == "coverage" and not args.coverage:
+        p.error("--prior coverage needs --coverage")
     if args.source == args.target and not degraded:
         p.error("source and target must differ unless the target is degraded")
     args.models = args.models or DEFAULT_MODELS[args.source]
