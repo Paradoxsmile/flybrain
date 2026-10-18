@@ -274,7 +274,7 @@ To separate density from everything else that differs between connectomes, `thin
 
 The failures on BANC show that the label-free choices need a test bed with known labels that differs from the target in the ways new connectomes do. Thinned copies of the development connectomes (`label_free.py --target-retention`, `--target-exclude`) provide one without touching a new dataset: FAFB → MCNS at 100, 50 and 20 % of MCNS's synapses (20 % is about BANC's density relative to FAFB), MCNS → FAFB at 100 and 35 %, and FAFB → MCNS at 50 % without its R1-6 photoreceptors, with and without bounded prior matching. For every candidate, `label_free.py` records label-free properties besides type consistency: the agreement between the three seeds' labelings (disagreement between independently trained models tracks their error under distribution shift; Jiang et al., 2022) and how far the predicted type sizes are from the reference (Jensen-Shannon divergence). `selection_rules.py` compares rules built from them (`flybrain/selection.py`). Gap between the chosen and the best candidate, points, mean / worst over the cases (one per run and label):
 
-| Rule | Sandbox (14 cases) | BANC re-scored (8 cases, exploratory) |
+| Rule | Sandbox (14 cases) | BANC re-scored (6 cases, exploratory) |
 |---|---|---|
 | Type consistency (used so far) | 4.1 / 26.7 | 19.9 / 56.6 |
 | Type sizes closest to the reference | 4.1 / 26.0 | 0.6 / 1.8 |

@@ -61,9 +61,9 @@ Status: October 2026. Searched with alphaXiv (arXiv full text), bioRxiv, Semanti
 ### D. Matching across hemispheres and datasets
 
 - **Pedigo, Winding, Priebe & Vogelstein (2023). Bisected graph matching improves automated pairing of bilaterally homologous neurons from connectomes. *Network Neuroscience*.** Graph matching of left/right homologs in the larval connectome, using contralateral edges. Relation: hemisphere correspondence by matching, not by a trained classifier.
-- **Priebe et al. (2017). Semiparametric spectral modeling of the *Drosophila* connectome.** Adjacency spectral embedding + Gaussian mixtures on the larval mushroom body recover biologically meaningful groups. Relation: unsupervised structure-based typing *(author list and venue unverified)*.
+- **Priebe et al. (2017). Semiparametric spectral modeling of the *Drosophila* connectome.** Adjacency spectral embedding + Gaussian mixtures on the larval mushroom body recover biologically meaningful groups. Authors: Priebe, Park, Tang, Athreya, Lyzinski, Vogelstein, Qin, Cocanougher, Eichler, Zlatic & Cardona; arXiv:1705.03297 (journal version not confirmed). Relation: unsupervised structure-based typing.
 - **BANC brain-and-cord connectome (2026). Distributed control circuits across a brain-and-cord connectome. *Nature*.** Cell types matched to other datasets with NBLAST, connectivity-based graph alignment and a combined annealing method *(author list unverified)*. Relation: current practice for cross-dataset typing is matching.
-- **Male CNS connectome (2026).** 166,700 neurons, brain and ventral nerve cord, one male fly; type mapping to FlyWire and MANC published on male-cns.janelia.org, with connection weights scaled by 0.581 to align with FlyWire *(journal and author list unverified)*. Relation: our transfer target; the type mapping removes most label-alignment work.
+- **Berg et al. (2026). Sexual dimorphism in the complete connectome of the *Drosophila* male central nervous system. *Cell* 189(18), 5504–5526, doi:10.1016/j.cell.2026.08.015 (bioRxiv 10.1101/2025.10.09.680999).** 166,700 neurons, brain and ventral nerve cord, one male fly; type mapping to FlyWire and MANC published on male-cns.janelia.org, with connection weights scaled by 0.581 to align with FlyWire *(volume, pages and date from secondary sources; check the journal page)*. Relation: our transfer target; the type mapping removes most label-alignment work.
 
 ### E. Network statistics and modeling context
 
@@ -88,8 +88,8 @@ Status: October 2026. Searched with alphaXiv (arXiv full text), bioRxiv, Semanti
 
 ## 5. Open checks before citing
 
-- MCNS paper: journal, author list, final title.
+- MCNS paper (Berg et al., 2026): volume, pages and date against the *Cell* page.
 - BANC paper: author list.
 - Troidl et al.: accuracy numbers.
-- Priebe et al. (2017): author list and venue.
+- Priebe et al. (2017): whether a journal version exists (arXiv:1705.03297 confirmed).
 - NTAC: exact per-dataset numbers (in figures and supplement, not in the text we read).
