@@ -50,9 +50,10 @@ import pandas as pd
 import torch
 from sklearn.metrics import f1_score
 
-from flybrain.adapt import prior_weights
+from flybrain.adapt import em_prior, prior_weights
 from flybrain.banc import VARIANTS as BANC_VARIANTS
 from flybrain.consistency import type_consistency
+from flybrain.coverage import COVERAGES, TARGET_EXCLUSIONS, coverage_weights
 from flybrain.features import normalize_features
 from flybrain.loading import encode_labels, load_graph
 from flybrain.mcns import VARIANTS as MCNS_VARIANTS
@@ -118,10 +119,13 @@ def setups(label: str, args):
     name is the target variant for a FAFB source, the source variant for a FAFB target and
     "<source variant>/<target variant>" otherwise."""
     tvs = variants(args.target, args.synthetic)
+    exclusions = TARGET_EXCLUSIONS.get(args.target_coverage, {})
     degrade = {
         "retention": args.target_retention,
         "retention_seed": args.retention_seed,
-        "exclude_types": tuple(args.target_exclude),
+        "exclude_types": tuple(args.target_exclude) + exclusions.get("exclude_types", ()),
+        "exclude_super_classes": exclusions.get("exclude_super_classes", ()),
+        "crop_fraction": args.target_crop,
     }
     targets = {
         tv or args.target: load(args.target, label, tv, args.synthetic, **degrade) for tv in tvs
@@ -180,6 +184,22 @@ def breakdown(g, pred, label: str) -> dict:
     return out
 
 
+def type_prior(p, ref, src, args) -> tuple[np.ndarray, np.ndarray]:
+    """(expected type shares on the target, class weights for prior matching).
+
+    source: the shares the GNN predicts on its source; coverage: the same, weighting each
+    source neuron by the share of its synapses in the neuropils the target covers; em:
+    estimated from the target predictions (flybrain.adapt.em_prior)."""
+    shares = ref.mean(axis=0)
+    if args.prior == "coverage":
+        w = coverage_weights(src.node_ids.numpy(), args.prior_coverage)
+        shares = w @ ref / w.sum()
+    if args.prior == "em":
+        shares, weights = em_prior(p, shares)
+        return shares, np.maximum(weights, 1e-12)
+    return shares, prior_weights(p, shares * len(p), max_weight=args.max_weight)
+
+
 def run_label(label: str, args, out_dir) -> dict:
     cases, graphs, scoring_key = setups(label, args)
     targets = {name: tgt for name, _, _, tgt in cases}
@@ -202,10 +222,10 @@ def run_label(label: str, args, out_dir) -> dict:
                 else normalize_features(tgt.x, "global", fit_mask=train, reference=src.x)
             )
             p = probabilities(model, cfg, tgt, x)
-            weights = prior_weights(p, ref.mean(axis=0) * len(p), max_weight=args.max_weight)
+            shares, weights = type_prior(p, ref, src, args)
             seed_weights.append(weights)
             seed_probs.append(p.astype(np.float32))
-            refs.append(ref.mean(axis=0))
+            refs.append(shares)
         reference = np.mean(refs, axis=0)
         for rho in RHOS:
             total = np.zeros_like(seed_probs[0])
@@ -268,6 +288,10 @@ def run_label(label: str, args, out_dir) -> dict:
         "target_exclude": list(args.target_exclude),
         "max_weight": args.max_weight,
         "source_retention": args.source_retention,
+        "target_coverage": args.target_coverage,
+        "target_crop": args.target_crop,
+        "prior": args.prior,
+        "prior_coverage": args.prior_coverage,
         "models": used_models,
         "select": args.select,
         "chosen": {"variant": chosen[0], "norm": chosen[1], "rho": chosen[2]},
@@ -345,10 +369,17 @@ def main() -> None:
     p.add_argument(
         "--source-retention", type=float, default=1.0, help="GNNs of thinning.py at this density"
     )
+    p.add_argument("--target-coverage", default=None, choices=sorted(TARGET_EXCLUSIONS))
+    p.add_argument("--target-crop", type=float, default=0.0, help="share of cropped neurons")
+    p.add_argument("--prior", default="source", choices=["source", "coverage", "em"])
+    p.add_argument("--prior-coverage", default=None, choices=sorted(COVERAGES))
     p.add_argument("--synthetic", action="store_true", help="synthetic stand-ins (for tests)")
     p.add_argument("--out", default=None, help="default: label_free[_rev | _<source>_<target>]")
     args = p.parse_args()
-    degraded = args.target_retention < 1 or args.target_exclude
+    degraded = args.target_retention < 1 or args.target_exclude or args.target_crop > 0
+    degraded = degraded or args.target_coverage is not None
+    if args.prior == "coverage" and (args.source != "fafb" or not args.prior_coverage):
+        p.error("--prior coverage needs --source fafb and --prior-coverage")
     if args.source == args.target and not degraded:
         p.error("source and target must differ unless the target is degraded")
     args.models = args.models or DEFAULT_MODELS[args.source]
@@ -363,6 +394,9 @@ def main() -> None:
         default += "_x" if args.target_exclude else ""
         default += f"_w{args.max_weight:g}" if args.max_weight else ""
         default += f"_s{args.source_retention:g}" if args.source_retention < 1 else ""
+        default += f"_{args.target_coverage}" if args.target_coverage else ""
+        default += f"_crop{args.target_crop:g}" if args.target_crop else ""
+    default += f"_prior-{args.prior}" if args.prior != "source" else ""
     default += f"_{args.select}" if args.select != "consistency" else ""
     args.out = args.out or default
     out_dir = REPO_ROOT / "results" / args.out

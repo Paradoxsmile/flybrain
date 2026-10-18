@@ -48,3 +48,27 @@ def prior_weights(
 def adapt_predictions(probs: np.ndarray, weights: np.ndarray, rho: float) -> np.ndarray:
     """Class index per row after reweighting with weights ** rho."""
     return (np.asarray(probs) * np.asarray(weights) ** rho).argmax(axis=1)
+
+
+def em_prior(
+    probs: np.ndarray, source_prior: np.ndarray, iters: int = 500, tol: float = 1e-7
+) -> tuple[np.ndarray, np.ndarray]:
+    """Target class prior estimated by EM (Saerens, Latinne & Decaestecker, 2002) and the
+    weights target / source prior.
+
+    Unlike prior_weights, which imposes the reference sizes, EM estimates the sizes from the
+    classifier's outputs on the target: classes that the target lacks shrink towards zero
+    instead of being filled. probs are the posteriors under the source prior."""
+    probs = np.asarray(probs, dtype=np.float64)
+    pi_s = np.asarray(source_prior, dtype=np.float64)
+    pi_s = pi_s / pi_s.sum()
+    pi_t = pi_s.copy()
+    for _ in range(iters):
+        q = probs * (pi_t / np.maximum(pi_s, 1e-300))
+        q /= q.sum(axis=1, keepdims=True)
+        new = q.mean(axis=0)
+        done = np.max(np.abs(new - pi_t)) < tol
+        pi_t = new
+        if done:
+            break
+    return pi_t, pi_t / np.maximum(pi_s, 1e-300)

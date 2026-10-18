@@ -166,6 +166,9 @@ def build_graph(
     return data
 
 
+CROP_RETENTION = 0.1  # cropped hemibrain neurons: median 30 vs. 340 input synapses
+
+
 def degrade_tables(
     neurons: pd.DataFrame,
     connections: pd.DataFrame,
@@ -173,17 +176,36 @@ def degrade_tables(
     seed: int = 0,
     exclude_types: tuple = (),
     min_count: int | None = MIN_COUNT,
+    exclude_super_classes: tuple = (),
+    crop_fraction: float = 0.0,
+    crop_retention: float = CROP_RETENTION,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """A less complete copy of a connectome: neurons of `exclude_types` (cell_type) removed,
-    synapse counts binomially thinned (flybrain.thinning) and, if min_count is given,
-    connections with fewer remaining synapses dropped."""
-    if exclude_types:
-        neurons = neurons[~neurons["cell_type"].isin(list(exclude_types))]
-    if retention < 1.0:
+    """A less complete copy of a connectome, for development with known labels.
+
+    Neurons of `exclude_types` (cell_type) or `exclude_super_classes` are removed (a partial
+    volume); synapse counts are binomially thinned with `retention` (flybrain.thinning); a
+    random `crop_fraction` of the remaining neurons is cropped, i.e. their connections keep
+    each synapse only with probability crop_retention (per cropped end), as for neurons cut by
+    the volume boundary; with min_count, connections with fewer remaining synapses are
+    dropped."""
+    drop = neurons["cell_type"].isin(list(exclude_types))
+    drop |= neurons["super_class"].isin(list(exclude_super_classes))
+    neurons = neurons[~drop]
+    if retention == 1.0 and crop_fraction == 0.0:
+        return neurons, connections
+    rng = np.random.default_rng(seed)
+    if crop_fraction > 0.0:
+        cropped = neurons[ID_COL].to_numpy()[rng.random(len(neurons)) < crop_fraction]
+        ends = connections[PRE_COL].isin(cropped).to_numpy().astype(int)
+        ends = ends + connections[POST_COL].isin(cropped).to_numpy().astype(int)
+        p = retention * crop_retention**ends
+        counts = connections[WEIGHT_COL].to_numpy().round().astype(np.int64)
+        counts = rng.binomial(counts, p)
+    else:
         counts = thin_counts(connections[WEIGHT_COL].to_numpy(), retention, seed)
-        connections = connections.assign(**{WEIGHT_COL: counts})
-        if min_count is not None:
-            connections = connections[connections[WEIGHT_COL] >= min_count]
+    connections = connections.assign(**{WEIGHT_COL: counts})
+    if min_count is not None:
+        connections = connections[connections[WEIGHT_COL] >= min_count]
     return neurons, connections
 
 
@@ -200,6 +222,8 @@ def load_graph(
     retention: float = 1.0,
     retention_seed: int = 0,
     exclude_types: tuple = (),
+    exclude_super_classes: tuple = (),
+    crop_fraction: float = 0.0,
 ) -> Data:
     """Load the real graph (raw -> Parquet cache -> Data), or a synthetic one if requested.
 
@@ -209,44 +233,48 @@ def load_graph(
     (flybrain.banc, preprocessing `banc_variant`). With synthetic=True, other synthetic graphs
     stand in for MCNS and BANC.
 
-    retention < 1 or exclude_types give a less complete copy (degrade_tables; for MCNS and BANC
-    the counts are thinned before the variant's threshold), labeled in the label space of the
-    full FAFB graph.
+    retention < 1, exclude_types, exclude_super_classes or crop_fraction give a less complete
+    copy (degrade_tables; for MCNS and BANC before the variant's threshold), labeled in the
+    label space of the full FAFB graph.
     """
     offsets = {"fafb": 0, "mcns": 1000, "banc": 2000}  # synthetic stand-ins
     if dataset not in offsets:
         raise ValueError(f"dataset must be one of {sorted(offsets)}, got {dataset!r}")
+    degrade = {
+        "retention": retention,
+        "seed": retention_seed,
+        "exclude_types": exclude_types,
+        "exclude_super_classes": exclude_super_classes,
+        "crop_fraction": crop_fraction,
+    }
+    full = retention == 1.0 and not exclude_types and not exclude_super_classes
+    full = full and crop_fraction == 0.0
     if synthetic:
         from flybrain.synthetic import make_synthetic_tables
 
         fafb = make_synthetic_tables(seed=seed)
-        if dataset == "fafb" and retention == 1.0 and not exclude_types:
+        if dataset == "fafb" and full:
             return build_graph(*fafb, label_col, min_class_size)
         names = encode_labels(fafb[0][label_col], min_class_size)[1]
         other = fafb if dataset == "fafb" else make_synthetic_tables(seed=seed + offsets[dataset])
-        other = degrade_tables(*other, retention, retention_seed, exclude_types)
+        other = degrade_tables(*other, **degrade)
         return build_graph(*other, label_col, 1, names)
     fafb_neurons, connections = load_tables(raw_dir, processed_dir)
-    full = retention == 1.0 and not exclude_types
     if dataset == "fafb" and full:
         return build_graph(fafb_neurons, connections, label_col, min_class_size)
     names = encode_labels(fafb_neurons[label_col], min_class_size)[1]
     if dataset == "fafb":
-        neurons = fafb_neurons
+        neurons, connections = degrade_tables(fafb_neurons, connections, **degrade)
     elif dataset == "mcns":
         from flybrain.mcns import load_mcns_tables
 
         neurons, connections = load_mcns_tables(
-            mcns_variant, raw_dir / "mcns", processed_dir, retention, retention_seed
+            mcns_variant, raw_dir / "mcns", processed_dir, None if full else degrade
         )
     else:
         from flybrain.banc import load_banc_tables
 
         neurons, connections = load_banc_tables(
-            banc_variant, raw_dir / "banc", processed_dir, retention, retention_seed
+            banc_variant, raw_dir / "banc", processed_dir, None if full else degrade
         )
-    thin_here = retention if dataset == "fafb" else 1.0  # MCNS / BANC: thinned in their loader
-    neurons, connections = degrade_tables(
-        neurons, connections, thin_here, retention_seed, exclude_types
-    )
     return build_graph(neurons, connections, label_col, 1, names)
