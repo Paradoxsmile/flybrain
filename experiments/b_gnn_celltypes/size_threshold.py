@@ -11,6 +11,11 @@ per threshold, with the cell_type config otherwise unchanged:
 Both are broken down with stratify.py's strata: region of the type (FAFB super class) and FAFB
 type size, with size bins extended below 20.
 
+Below a threshold of 5 (thousands of classes), the GNNs train with lean_training.py (chunked output
+layer, same results) and the label-free stage runs with lean_label_free.py (lazy probabilities and
+chunked prior matching; label_free.py's dense N x K float64 matrices would need about 9 GB per seed
+at threshold 3). Both agree with the standard code up to float rounding.
+
 Writes results/size_threshold/m<size>/within_<split>/s<seed>/{metrics.json,predictions.parquet}
 (random split also model.pt, in label_free.py's layout under m<size>/models/cell_type/gnn/),
 m<size>/label_free/cell_type/* (as label_free.py) and strata.csv, types.csv, table.md over all
@@ -29,6 +34,8 @@ import time
 from pathlib import Path
 
 import label_free
+import lean_label_free
+import lean_training
 import numpy as np
 import pandas as pd
 import stratify
@@ -46,6 +53,7 @@ OUT = REPO_ROOT / "results" / "size_threshold"
 LABEL = "cell_type"
 SPLITS = {"random": "seeds", "left_right": "lr_seeds"}
 SIZE_BINS = [(2, 4), (5, 9), (10, 19), (20, 49), (50, 199), (200, 999), (1000, np.inf)]
+LEAN_BELOW = 5  # below: lean_training / lean_label_free (same results, O(chunk x K) memory)
 REUSE = {"models": "transfer2", "seeds": (0, 1, 2), "label_free": "label_free"}  # threshold 20
 STAGE_NAMES = {"no_adaptation": "no adaptation", "selected": "prior matched", "refined": "+ NTAC"}
 
@@ -117,9 +125,10 @@ def run_within(min_size: int, split: str, seed: int, epochs: int | None) -> None
     data = load_graph(LABEL, seed=seed, min_class_size=min_size)
     train, val, test = make_split(data, split, seed=seed)
     start = time.time()
-    fit = fit_gnn(cfg, data, train, val, device)
+    lean = min_size < LEAN_BELOW
+    fit = (lean_training.fit_gnn_lean if lean else fit_gnn)(cfg, data, train, val, device)
     seconds = time.time() - start
-    pred = predict(fit.model, fit.x, fit.adj)
+    pred = (lean_training.predict_lean if lean else predict)(fit.model, fit.x, fit.adj)
     if split == "random":  # label_free.py's layout: <models>/<label>/gnn/s<seed>/model.pt
         m = OUT / f"m{min_size}" / "models" / LABEL / "gnn" / f"s{seed}"
         m.mkdir(parents=True, exist_ok=True)
@@ -165,7 +174,11 @@ def run_label_free(min_size: int) -> None:
         coverage=None,
     )
     start = time.time()
-    sel = label_free.run_label(LABEL, args, out_dir)
+    if min_size < LEAN_BELOW:
+        with lean_label_free.patched():
+            sel = label_free.run_label(LABEL, args, out_dir)
+    else:
+        sel = label_free.run_label(LABEL, args, out_dir)
     sel["seconds"] = time.time() - start
     (out_dir / LABEL / "selected.json").write_text(json.dumps(sel, indent=2))
 
@@ -173,7 +186,7 @@ def run_label_free(min_size: int) -> None:
 def runs(types: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Per-type tables and strata of every finished run."""
     all_t, all_s = [], []
-    for d in sorted(OUT.glob("m*")):
+    for d in sorted(p for p in OUT.glob("m*") if p.is_dir()):
         min_size = int(d.name[1:])
         for split in SPLITS:
             files = sorted((d / f"within_{split}").glob("s*/predictions.parquet"))
