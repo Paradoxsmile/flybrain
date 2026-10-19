@@ -7,7 +7,7 @@
 
 Machine learning on the *Drosophila* connectome: how much of a neuron's identity is encoded in its wiring alone, and what does connectome-constrained modelling of the fly visual system tell us about the role of wiring?
 
-> Status: part b has results on FlyWire (FAFB v783), including a cross-hemisphere test, a replication within the male CNS (MCNS v1.0) and a fully label-free FAFB → MCNS transfer (92.6 % over 394 cell types; 83.4 % when run unchanged from MCNS to FAFB), and two pre-registered tests on further connectomes: BANC (sparser; the selection rule failed and was revised on a development sandbox) and the hemibrain (a partial volume, which the transferred GNN cannot type: 19.6 % on cell types). Lowering the minimum type size to 10 or 5 neurons keeps the transfer at 93.0 % (649 types) and 90.3 % (1,694 types). With a few hand labels, plain NTAC overtakes the GNN; the GNN's niche is typing with no or almost no labels. Part c is open.
+> Status: part b has results on FlyWire (FAFB v783), including a cross-hemisphere test, a replication within the male CNS (MCNS v1.0) and a fully label-free FAFB → MCNS transfer (92.6 % over 394 cell types; 83.4 % when run unchanged from MCNS to FAFB), and two pre-registered tests on further connectomes: BANC (sparser; the selection rule failed and was revised on a development sandbox) and the hemibrain (a partial volume, which the transferred GNN cannot type: 19.6 % on cell types). Lowering the minimum type size keeps the transfer at 93.0 % with 10 neurons per type (649 types) and 84.2 % with 2 (7,064 types; types of 2–4 neurons at 54 %). With a few hand labels, plain NTAC overtakes the GNN; the GNN's niche is typing with no or almost no labels. Part c is open.
 
 ## Motivation
 
@@ -325,27 +325,41 @@ NTAC needs labeled partners, the GNN does not. Seeding NTAC with the predictions
 
 ### Rarer cell types: lowering the minimum type size
 
-The experiments above predict only FAFB types with at least 20 neurons (434 types). `size_threshold.py` repeats the within-FAFB training and the label-free FAFB → MCNS transfer at a minimum of 10 and 5 neurons per type (`load_graph(min_class_size=...)`; the ≥ 10 and ≥ 5 GNNs were trained on a Kaggle T4, the label-free stage on CPU; nothing else changed). Accuracy % / macro-F1 (macro-F1 here: mean over the true types present, as in `stratify.py`); results in `results/size_threshold/`:
+The experiments above predict only FAFB types with at least 20 neurons (434 types). `size_threshold.py` repeats the within-FAFB training (3 seeds per split) and the label-free FAFB → MCNS transfer at a minimum of 10, 5, 3 and 2 neurons per type (`load_graph(min_class_size=...)`; nothing else changed). The GNNs were trained on a Kaggle T4, the label-free stage ran on CPU. Below 5 neurons per type (thousands of classes) training uses `lean_training.py` (output layer in row chunks; identical to the standard training at ≥ 20 up to 1e-5) and the label-free stage `lean_label_free.py` (probabilities and prior matching in chunks; reproduces the standard run at ≥ 10, 93.02 vs. 93.04 %). Accuracy % / macro-F1 (macro-F1 here: mean over the true types present, as in `stratify.py`); results in `results/size_threshold/`:
 
 | Min. size | Types (FAFB neurons labeled) | FAFB random split | FAFB left → right | FAFB → MCNS label-free, + NTAC (MCNS types) | of which central-brain types |
 |---|---|---|---|---|---|
-| 20 | 434 (108,647; 78 %) | 95.1 ± 0.1 / 0.93 | 94.5 / 0.90 (benchmark) | 92.6 / 0.81 (394) | 65.1 / 0.80 (71 types) |
-| **10** | **779 (112,996; 81 %)** | 94.2 ± 0.5 / 0.90 | 94.0 / 0.87 | **93.0 / 0.80 (649)** | **77.7 / 0.79 (243 types)** |
-| 5 | 2,164 (121,799; 87 %) | 90.9 ± 0.8 / 0.82 | 90.1 / 0.78 | 90.3 / 0.71 (1,694) | 72.3 / 0.70 (1,181 types) |
+| 20 | 434 (108,647; 78 %) | 95.1 ± 0.1 / 0.93 | 94.3 ± 0.7 / 0.92 | 92.6 / 0.81 (394) | 65.1 / 0.80 (71 types) |
+| **10** | **779 (112,996; 81 %)** | 94.2 ± 0.5 / 0.90 | 93.1 ± 1.1 / 0.87 | **93.0 / 0.80 (649)** | **77.7 / 0.79 (243 types)** |
+| 5 | 2,164 (121,799; 87 %) | 90.9 ± 0.8 / 0.82 | 89.1 ± 0.9 / 0.77 | 90.3 / 0.71 (1,694) | 72.3 / 0.70 (1,181 types) |
+| 3 | 4,175 (129,247; 93 %) | 87.5 ± 0.4 / 0.72 | 87.2 ± 0.8 / 0.72 | 87.6 / 0.57 (3,206) | 62.5 / 0.54 (2,542 types) |
+| 2 | 8,658 (138,213; 99 %) | 82.9 ± 0.9 / 0.68 * | 83.8 ± 1.1 / 0.71 | 84.2 / 0.51 (7,064) | 64.3 / 0.54 (5,371 types) |
 
-FAFB → MCNS after NTAC, by FAFB type size:
+\* In the random split, types with 2 neurons go entirely to training, so this row tests the same 4,175 types as ≥ 3. Only the left → right split tests 2-neuron types, typically one neuron per hemisphere: the model has seen a single example. The ≥ 20 left → right row is the sweep's own run (the benchmark's separate run: 94.5 ± 0.9).
 
-| Min. size | 5–9 | 10–19 | 20–49 | 50–199 | 200–999 | ≥ 1000 |
-|---|---|---|---|---|---|---|
-| 20 | – | – | 77.0 / 0.74 | 88.2 / 0.83 | 92.4 / 0.88 | 95.1 / 0.93 |
-| 10 | – | 75.5 / 0.74 (255 types) | 80.4 / 0.76 | 90.8 / 0.87 | 93.7 / 0.90 | 95.2 / 0.93 |
-| 5 | 71.6 / 0.68 (1,045 types) | 68.6 / 0.66 | 79.6 / 0.75 | 90.8 / 0.87 | 90.4 / 0.88 | 94.0 / 0.92 |
+By FAFB type size: within FAFB, left → right, and FAFB → MCNS after NTAC, each at the threshold that first includes the bin (accuracy % / macro-F1, number of types):
 
-- **Rare types survive the label-free transfer.** Without any MCNS label, types with 10–19 FAFB neurons are typed at 75.5 % and types with 5–9 neurons at 71.6 % (1,045 types; chance is about 1 in 2,164). Within FAFB across hemispheres the same bins reach 86.7 and 77.8 %.
-- **≥ 10 is better than ≥ 20 everywhere after transfer**: 255 more types, overall 93.0 vs. 92.6 % on 3,100 more neurons, and no size bin worse (20–49: 80.4 vs. 77.0 %). At ≥ 5 the large types lose little (≥ 1000: 94.0 vs. 95.1 %). We therefore use ≥ 10 as the default label set for new cell-type results. The experiments above, including the two pre-registered tests, keep ≥ 20, the label set their protocols and saved models fix, and the code defaults (`configs/cell_type.yaml`, `label_free.LABELS`) stay at 20 so that their commands reproduce them.
-- **Central-brain types transfer better than the ≥ 20 set suggested.** At ≥ 20 the 71 central-brain types are dominated by Kenyon cell subtypes; at ≥ 10 the 243 central-brain types reach 77.7 %, at ≥ 5 the 1,181 types 72.3 %.
-- **Weak spots:** sensory types stay near 63 % (olfactory receptor neurons), and the small ascending, descending and other types added at ≥ 5 reach only 48.8 %. Prior matching and NTAC matter more for rare types: +11.4 points at ≥ 5 against +5.0 at ≥ 20.
-- Open: ≥ 2 (8,658 types) needs a chunked output layer, because the full logits do not fit in a T4's memory; the left → right rows at ≥ 10 and ≥ 5 have one seed.
+| | 2–4 (at ≥ 2) | 5–9 (at ≥ 5) | 10–19 (at ≥ 10) | 20–49 (at ≥ 20) | ≥ 1000 (at ≥ 20) |
+|---|---|---|---|---|---|
+| FAFB left → right | 75.9 / 0.72 (6,438) | 76.4 / 0.74 | 86.6 / 0.84 | 90.7 / 0.89 | 95.4 / 0.95 |
+| FAFB → MCNS, label-free | 54.2 / 0.49 (5,370) | 71.6 / 0.68 (1,045) | 75.5 / 0.74 (255) | 77.0 / 0.74 | 95.1 / 0.93 |
+
+The same types at every threshold, FAFB → MCNS after NTAC:
+
+| Min. size | 2–4 | 5–9 | 10–19 | 20–49 | 50–199 | 200–999 | ≥ 1000 |
+|---|---|---|---|---|---|---|---|
+| 20 | – | – | – | 77.0 / 0.74 | 88.2 / 0.83 | 92.4 / 0.88 | 95.1 / 0.93 |
+| 10 | – | – | 75.5 / 0.74 | 80.4 / 0.76 | 90.8 / 0.87 | 93.7 / 0.90 | 95.2 / 0.93 |
+| 5 | – | 71.6 / 0.68 | 68.6 / 0.66 | 79.6 / 0.75 | 90.8 / 0.87 | 90.4 / 0.88 | 94.0 / 0.92 |
+| 3 | 54.2 / 0.48 | 66.5 / 0.59 | 63.6 / 0.59 | 78.3 / 0.72 | 89.8 / 0.85 | 89.3 / 0.87 | 93.5 / 0.91 |
+| 2 | 54.2 / 0.49 | 58.9 / 0.51 | 61.8 / 0.57 | 73.7 / 0.68 | 88.2 / 0.83 | 88.8 / 0.85 | 92.6 / 0.91 |
+
+- **Wiring identifies even the rarest types.** Within FAFB, a model that has seen one or two neurons of a type on the left hemisphere types its right-hemisphere neurons at 75.9 % (6,438 types of 2–4 neurons, out of 8,582). These types were defined by matching neurons across hemispheres (Schlegel et al., 2024), so the task is close to pairing homologs, which graph matching also does label-free (Pedigo et al., 2023); a graph-matching baseline is still to be run.
+- **Rare types transfer label-free, with a gap that widens below 10 neurons.** Without any MCNS label, types with 10–19 FAFB neurons are typed at 75.5 %, 5–9 neurons at 71.6 % and 2–4 neurons at 54.2 % (5,370 types, 13,742 neurons). Against within-FAFB left → right, the gap is about 11, 5 and 22 points.
+- **≥ 10 is better than ≥ 20 everywhere after transfer**: 255 more types, overall 93.0 vs. 92.6 % on 3,100 more neurons, and no size bin worse (20–49: 80.4 vs. 77.0 %). We therefore use ≥ 10 as the default label set for new cell-type results. The experiments above, including the two pre-registered tests, keep ≥ 20, the label set their protocols and saved models fix, and the code defaults (`configs/cell_type.yaml`, `label_free.LABELS`) stay at 20 so that their commands reproduce them.
+- **Below 10, each threshold trades common-type accuracy for coverage.** At ≥ 2 the 20–49 bin falls from 77.0 to 73.7 % after transfer and the ≥ 1000 bin from 95.1 to 92.6 %; within FAFB the cost is larger (≥ 1000, left → right: 95.4 to 89.0 %). A two-stage model, one classifier for common types and a separate stage for rare ones, may avoid this.
+- **The central brain and "other" carry the rare types and their errors.** Central-brain accuracy after transfer peaks at 77.7 % (243 types at ≥ 10) and settles at 62–64 % with thousands of rare types; at ≥ 20 its 71 types are dominated by Kenyon cell subtypes. Ascending, descending and other types fall to 31.6 % at ≥ 2, sensory types stay near 60 %. Optic-lobe and visual projection types stay at 93–97 % at every threshold.
+- **The pipeline steps behave differently with many classes.** Prior matching adds more as the number of types grows (+13.2 points at ≥ 2, +3.6 at ≥ 20). NTAC still raises accuracy by 3–4 points but lowers macro-F1 at ≥ 3 and ≥ 2 (0.62 → 0.57, 0.59 → 0.51): it pulls neurons of rare types into common ones, so for rare types the prior-matched labeling is the better endpoint.
 
 ### Labeling effort: how many hand labels the GNN saves
 
@@ -389,7 +403,7 @@ Related work and how this project relates to it: [docs/literature.md](docs/liter
 ## Limitations
 
 - Cell types were defined partly from connectivity, including matching across hemispheres and brains (Schlegel et al., 2024), so recovering them from wiring is partly circular. The GNN never sees partner identities, which weakens this concern but does not remove it. Super classes are mostly defined anatomically.
-- Most results predict only types with ≥ 20 neurons (434 of 8,772 types). Lowering the minimum to 10 or 5 neurons (779 / 2,164 types) works (see "Rarer cell types"), but types with fewer than 5 neurons, often one per hemisphere, are still left out.
+- Most results predict only types with ≥ 20 neurons (434 of 8,772 types). Lower minimums down to 2 neurons (8,658 types) were tested only within FAFB and for the FAFB → MCNS transfer (see "Rarer cell types"), without a graph-matching baseline; types with a single neuron are left out.
 - The setting is transductive: the whole graph is visible during training, only the labels of validation and test neurons are hidden.
 - Two animals of different sex, reconstructed and annotated by different teams. MCNS labels come from Janelia's `flywireType` mapping; 40 of the 434 FAFB types do not occur in it (some are split differently, e.g. Dm8a/b vs. yDm8/pDm8), and 2,751 neurons with several mapped types are not scored (a prediction falls within their type list for only 3–4 % of them).
 - The label-free pipeline (type-consistency selection, prior matching) was developed on the FAFB → MCNS pair while looking at its transfer errors. Run unchanged in the reverse direction it still helps (83.4 % on cell types vs. at most 78.5 % without prior matching). In the independent test on BANC, prior matching carried over but the selection by type consistency failed in three of four runs (see above). The revised rule (type sizes + seed agreement) was chosen on a sandbox of the same two development connectomes; on the hemibrain it stayed within 4.1 points of the best candidate for super classes but missed it by 6.4 points for cell types.
