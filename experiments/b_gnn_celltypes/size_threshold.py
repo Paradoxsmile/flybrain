@@ -19,10 +19,14 @@ at threshold 3). Both agree with the standard code up to float rounding.
 Writes results/size_threshold/m<size>/within_<split>/s<seed>/{metrics.json,predictions.parquet}
 (random split also model.pt, in label_free.py's layout under m<size>/models/cell_type/gnn/),
 m<size>/label_free/cell_type/* (as label_free.py) and strata.csv, types.csv, table.md over all
-finished runs. Finished runs are skipped.
+finished runs. Finished runs are skipped. With --target banc (only the label_free stage) or
+--select size_agreement, the label-free run goes to m<size>/label_free_<target>_<select> instead
+(e.g. label_free_banc_size_agreement; docs/banc_rare_protocol.md) and is not in the report.
 
 Usage: python experiments/b_gnn_celltypes/size_threshold.py [--min-sizes 20 10 5 2]
        [--stages within label_free report] [--seeds 0 1 2] [--lr-seeds 0] [--epochs 300]
+       python experiments/b_gnn_celltypes/size_threshold.py --min-sizes 2 --stages label_free
+           --target banc --select size_agreement
 """
 
 from __future__ import annotations
@@ -139,11 +143,18 @@ def run_within(min_size: int, split: str, seed: int, epochs: int | None) -> None
     write_within(d, data, pred, train, test, cfg, fit, f"{seconds:.0f} s on {device}")
 
 
-def run_label_free(min_size: int) -> None:
-    out_dir = OUT / f"m{min_size}" / "label_free"
+def label_free_dir(target: str, select: str) -> str:
+    if target == "mcns" and select == "consistency":
+        return "label_free"
+    return f"label_free_{target}_{select}"
+
+
+def run_label_free(min_size: int, target: str = "mcns", select: str = "consistency") -> None:
+    out_dir = OUT / f"m{min_size}" / label_free_dir(target, select)
     if (out_dir / LABEL / "selected.json").exists():
         return
-    if min_size == 20:  # the paper's run (results/label_free), with its stages from stratify.py
+    if min_size == 20 and out_dir.name == "label_free":
+        # the paper's run (results/label_free), with its stages from stratify.py
         pred = stratify.labelings(REUSE["label_free"], "fafb", "mcns")
         sel = json.loads(
             (REPO_ROOT / "results" / REUSE["label_free"] / LABEL / "selected.json").read_text()
@@ -158,11 +169,11 @@ def run_label_free(min_size: int) -> None:
     label_free.LABELS[LABEL] = min_size  # the FAFB label space of this threshold
     args = argparse.Namespace(
         source="fafb",
-        target="mcns",
+        target=target,
         models=f"size_threshold/m{min_size}/models",
         synthetic=False,
         score_all=False,
-        select="consistency",
+        select=select,
         target_retention=1.0,
         retention_seed=2,
         target_exclude=[],
@@ -287,14 +298,18 @@ def main() -> None:
     p.add_argument("--seeds", type=int, nargs="*", default=[0, 1, 2], help="random split")
     p.add_argument("--lr-seeds", type=int, nargs="*", default=[0], help="left -> right split")
     p.add_argument("--epochs", type=int, default=None, help="override config epochs")
+    p.add_argument("--target", default="mcns", choices=["mcns", "banc"], help="label_free stage")
+    p.add_argument("--select", default="consistency", choices=["consistency", "size_agreement"])
     args = p.parse_args()
+    if args.target != "mcns" and set(args.stages) != {"label_free"}:
+        p.error("--target banc runs only the label_free stage")
     for min_size in args.min_sizes:
         if "within" in args.stages:
             for split, attr in SPLITS.items():
                 for seed in getattr(args, attr):
                     run_within(min_size, split, seed, args.epochs)
         if "label_free" in args.stages:
-            run_label_free(min_size)
+            run_label_free(min_size, args.target, args.select)
     if "report" in args.stages:
         report()
 

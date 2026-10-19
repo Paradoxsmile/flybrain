@@ -21,7 +21,8 @@ with F, M the log1p(synapse) adjacencies among the FAFB rare neurons and the MCN
 (graph_matching.subgraph; MCNS in the preprocessing variant the label-free run chose, "raw").
 Each candidate matched to a FAFB neuron gets that neuron's type; candidates matched to padding
 (dummies) keep the stage-1 type. Neurons without a left/right side (FAFB 49 rare, MCNS a few
-hundred candidates) are not matched and keep the stage-1 type.
+hundred candidates) are not matched and keep the stage-1 type. --variant matches on another
+preprocessing variant of the target graph (same neurons and candidates).
 
 Starts (--start):
 - bary: the barycenter. Its gradient is a sum of a few outer products of degree vectors, on which
@@ -37,16 +38,25 @@ chosen so that lam = 1 makes it equal to the graph term at the soft projection.
 Scored on the labeled MCNS neurons (accuracy, macro-F1 = mean per-type F1 as stratify.per_type):
 those whose flywireType is a 2-4-neuron FAFB type (13,742) and all labeled ones (133,356).
 
+--target banc runs the same two stages from FAFB to BANC (docs/banc_rare_protocol.md). Stage 1 is
+size_threshold.py --min-sizes 2 --stages label_free --target banc --select size_agreement
+(results/size_threshold/m2/label_free_banc_size_agreement; --stage1 names another run under
+results/size_threshold/m2). Scored against reference A (BANC cell_type, the `label` of the
+stage-1 predictions), also by region (central brain, optic lobe), and against reference B
+(morph_type, the FAFB type matched by morphology, central brain only). With --candidates oracle,
+the candidates are the labeled reference-A neurons of 2-4-neuron types.
+
 --stage weights recomputes and caches the stage-1 prior-matching weights and both candidate sets'
 soft probabilities (one dense N x K float32 matrix, ~5 GB, at a time). --stage match runs one
 matching and appends to metrics.csv.
 
-Writes results/graph_matching_mcns/{soft_<candidates>.npz, metrics.csv, info_*.json,
-matches_*.parquet}.
+Writes results/graph_matching_<target>/{soft_<candidates>.npz, metrics.csv, info_*.json,
+matches_*.parquet} (or results/<--out>/).
 
 Usage: python experiments/b_gnn_celltypes/graph_matching_mcns.py --stage weights
        python experiments/b_gnn_celltypes/graph_matching_mcns.py --stage match [--start soft]
            [--lam 1] [--candidates gnn|oracle] [--iters 30]
+       python experiments/b_gnn_celltypes/graph_matching_mcns.py --target banc --stage match
 """
 
 from __future__ import annotations
@@ -70,8 +80,9 @@ from scipy.sparse.linalg import svds
 from flybrain.loading import load_graph
 from flybrain.utils import REPO_ROOT
 
-OUT = REPO_ROOT / "results" / "graph_matching_mcns"
-STAGE1 = REPO_ROOT / "results" / "size_threshold" / "m2" / "label_free" / "cell_type"
+STAGE1_ROOT = REPO_ROOT / "results" / "size_threshold" / "m2"
+STAGE1 = {"mcns": "label_free", "banc": "label_free_banc_size_agreement"}  # default stage-1 runs
+REFERENCE = {"mcns": "MCNS label", "banc": "ref A"}  # the stage-1 `label`, in metrics.csv
 MODELS = "size_threshold/m2/models"
 MIN_SIZE, MAX_SIZE = 2, 4
 SIDES = ("left", "right")
@@ -79,10 +90,11 @@ SIDES = ("left", "right")
 TERMS = (("LL", 0, 0), ("RR", 1, 1), ("LR", 0, 1), ("RL", 1, 0))
 
 
-def graphs(variant: str):
+def graphs(target: str, variant: str):
     fafb = load_graph("cell_type", min_class_size=MIN_SIZE)
-    mcns = load_graph("cell_type", min_class_size=MIN_SIZE, dataset="mcns", mcns_variant=variant)
-    return fafb, mcns
+    variant_arg = {f"{target}_variant": variant}
+    tgt = load_graph("cell_type", min_class_size=MIN_SIZE, dataset=target, **variant_arg)
+    return fafb, tgt
 
 
 def labels(data) -> np.ndarray:
@@ -96,22 +108,33 @@ def rare(type_names, sizes: pd.Series) -> np.ndarray:
     return (s >= MIN_SIZE) & (s <= MAX_SIZE)
 
 
+def morph_labels(tgt) -> np.ndarray:
+    """Reference B (BANC): the morphology-matched FAFB type where it is in the label space."""
+    morph = pd.Series(tgt.morph_type, dtype=object)
+    return morph.where(morph.isin(set(tgt.label_names))).to_numpy(dtype=object)
+
+
 def candidates(stage1: pd.DataFrame, sizes: pd.Series, kind: str) -> np.ndarray:
-    """Indices into MCNS: predicted (gnn) or labeled (oracle) as a 2-4-neuron FAFB type."""
+    """Indices into the target: predicted (gnn) or labeled (oracle) as a 2-4-neuron FAFB type."""
     if kind == "gnn":
         return np.nonzero(rare(stage1.pred, sizes))[0]
     return np.nonzero(stage1.label.notna().to_numpy() & rare(stage1.label, sizes))[0]
 
 
 def setup(args):
-    """Graphs, stage-1 labeling and the candidates (indices into MCNS)."""
-    sel = json.loads((STAGE1 / "selected.json").read_text())
-    fafb, mcns = graphs(sel["chosen"]["variant"])
-    stage1 = pd.read_parquet(STAGE1 / "predictions.parquet")
-    assert (stage1.root_id.to_numpy() == mcns.node_ids.numpy()).all()
+    """Graphs, stage-1 labeling and the candidates (indices into the target)."""
+    d = STAGE1_ROOT / args.stage1 / "cell_type"
+    sel = json.loads((d / "selected.json").read_text())
+    assert sel["target"] == args.target
+    args.variant = args.variant or sel["chosen"]["variant"]
+    fafb, tgt = graphs(args.target, args.variant)
+    stage1 = pd.read_parquet(d / "predictions.parquet")
+    assert (stage1.root_id.to_numpy() == tgt.node_ids.numpy()).all()
     sizes = stratify.fafb_types()["size"]
     cand = candidates(stage1, sizes, args.candidates)
-    return SimpleNamespace(sel=sel, fafb=fafb, mcns=mcns, stage1=stage1, sizes=sizes, cand=cand)
+    return SimpleNamespace(
+        sel=sel, fafb=fafb, tgt=tgt, stage1=stage1, sizes=sizes, cand=cand, out=args.out_dir
+    )
 
 
 def soft_probabilities(s) -> None:
@@ -123,10 +146,10 @@ def soft_probabilities(s) -> None:
     ns = argparse.Namespace(prior=s.sel["prior"], max_weight=s.sel["max_weight"])
     paths = label_free.model_paths(MODELS, "cell_type")
     t = time.time()
-    probs, weights, _ = lean_label_free.seed_outputs(paths, s.fafb, s.mcns, chosen["norm"], ns, {})
+    probs, weights, _ = lean_label_free.seed_outputs(paths, s.fafb, s.tgt, chosen["norm"], ns, {})
     print(f"prior matching: {time.time() - t:.0f} s", flush=True)
     ens, _ = lean_label_free.adjusted(probs, weights, chosen["rho"])
-    names = np.array(s.mcns.label_names, dtype=object)
+    names = np.array(s.tgt.label_names, dtype=object)
     agree = (names[ens] == s.stage1.pred_selected.to_numpy()).mean()
     print(f"agreement with pred_selected: {agree:.6f}", flush=True)
     rare_cols = np.nonzero(rare(names, s.sizes))[0]
@@ -141,8 +164,8 @@ def soft_probabilities(s) -> None:
             q /= q.sum(axis=1, keepdims=True)
             out += q[:, rare_cols] / len(probs)
         np.savez(
-            OUT / f"soft_{kind}.npz",
-            cand=s.mcns.node_ids.numpy()[cand],
+            s.out / f"soft_{kind}.npz",
+            cand=s.tgt.node_ids.numpy()[cand],
             types=names[rare_cols].astype(str),
             probs=out,
             weights=np.stack(weights),
@@ -233,8 +256,8 @@ def project(p: np.ndarray) -> np.ndarray:
 
 def soft_start(s, args, f_idx: np.ndarray, m_idx: np.ndarray, flabel, n: int) -> np.ndarray:
     """P0 (FAFB x MCNS, n x n): q_m(type f) / FAFB neurons of type f in the block."""
-    z = np.load(OUT / f"soft_{args.candidates}.npz")
-    assert (z["cand"] == s.mcns.node_ids.numpy()[s.cand]).all()
+    z = np.load(s.out / f"soft_{args.candidates}.npz")
+    assert (z["cand"] == s.tgt.node_ids.numpy()[s.cand]).all()
     row = pd.Series(np.arange(len(s.cand)), index=s.cand).loc[m_idx].to_numpy()
     col = pd.Series(np.arange(len(z["types"])), index=z["types"]).loc[flabel[f_idx]].to_numpy()
     count = pd.Series(flabel[f_idx]).map(pd.Series(flabel[f_idx]).value_counts()).to_numpy()
@@ -262,18 +285,18 @@ def score(truth: np.ndarray, pred: np.ndarray, subset: np.ndarray, types) -> dic
 def match(s, args) -> None:
     flabel = labels(s.fafb)
     fside = np.asarray(s.fafb.side)
-    mside = np.asarray(s.mcns.side)
+    mside = np.asarray(s.tgt.side)
     frare = rare(flabel, s.sizes)
     f_blocks = [np.nonzero(frare & (fside == side))[0] for side in SIDES]
     m_blocks = [s.cand[mside[s.cand] == side] for side in SIDES]
     n = max(len(b) for b in f_blocks + m_blocks)
     print(
-        f"FAFB rare {[len(b) for b in f_blocks]}, MCNS candidates {[len(b) for b in m_blocks]}"
+        f"FAFB rare {[len(b) for b in f_blocks]}, candidates {[len(b) for b in m_blocks]}"
         f" (of {len(s.cand)}), n = {n}",
         flush=True,
     )
     F = as32(subgraph(s.fafb, *f_blocks, n))
-    M = as32(subgraph(s.mcns, *m_blocks, n))
+    M = as32(subgraph(s.tgt, *m_blocks, n))
     print({"F": {k: v.nnz for k, v in F.items()}, "M": {k: v.nnz for k, v in M.items()}})
 
     truth = s.stage1.label.to_numpy(dtype=object)
@@ -281,6 +304,13 @@ def match(s, args) -> None:
     types = stratify.fafb_types()
     rows = []
     in_rare = pd.notna(truth) & rare(truth, s.sizes)
+    ref = REFERENCE[args.target]
+    references = [(ref, truth)]  # per reference: 2-4 stratum, its matched part, all labeled
+    regions = []  # 2-4 stratum of the first reference by region
+    if args.target == "banc":
+        references.append(("ref B", morph_labels(s.tgt)))
+        region = np.asarray(s.tgt.region)
+        regions = [(r, region == r) for r in ("central_brain", "optic_lobe")]
 
     def evaluate(method: str, matches: list | None, seconds: float) -> None:
         pred = stage1.copy()
@@ -291,32 +321,37 @@ def match(s, args) -> None:
             pred[mb[real]] = flabel[fb[fm[real]]]
             info["to_dummy"] += int((~real).sum())
             info["fafb_unmatched"] += int(len(fb) - real.sum())
-        rare_cand = np.isin(np.arange(len(truth)), np.concatenate(m_blocks)) & in_rare
-        for subset, k in [
-            ("2-4 (MCNS label)", in_rare),
-            ("2-4, matched candidates", rare_cand),
-            ("all labeled", np.ones(len(truth), bool)),
-        ]:
+        matched = np.isin(np.arange(len(truth)), np.concatenate(m_blocks))
+        subsets = []
+        for i, (name, lab) in enumerate(references):
+            r = pd.notna(lab) & rare(lab, s.sizes)
+            suffix = "" if i == 0 else f" ({name})"  # the first reference's names as for MCNS
+            subsets += [
+                (name, lab, f"2-4 ({name})", r),
+                (name, lab, "2-4, matched candidates" + suffix, r & matched),
+                (name, lab, "all labeled" + suffix, np.ones(len(lab), bool)),
+            ]
+        subsets += [(ref, truth, f"2-4 ({ref}), {name}", in_rare & k) for name, k in regions]
+        for name, lab, subset, k in subsets:
             rows.append(
                 {
                     "candidates": args.candidates,
                     "method": method,
+                    "reference": name,
                     "subset": subset,
-                    **score(truth, pred, k, types),
+                    **score(lab, pred, k, types),
                     **info,
                     "seconds": round(seconds),
                 }
             )
             print(rows[-1], flush=True)
         if method.startswith("gm"):
-            pd.DataFrame(
-                {
-                    "root_id": s.mcns.node_ids.numpy(),
-                    "label": truth,
-                    "stage1": stage1,
-                    "pred": pred,
-                }
-            ).iloc[s.cand].to_parquet(OUT / f"matches_{args.candidates}_{method}.parquet")
+            out = {"root_id": s.tgt.node_ids.numpy(), "label": truth}
+            out.update({f"label_{name}": lab for name, lab in references[1:]})
+            out.update(stage1=stage1, pred=pred)
+            pd.DataFrame(out).iloc[s.cand].to_parquet(
+                s.out / f"matches_{args.candidates}_{method}.parquet"
+            )
 
     evaluate("stage 1 (label-free GNN)", None, 0.0)
     bary = np.full((n, n), 1.0 / n, dtype=np.float32)
@@ -350,37 +385,46 @@ def match(s, args) -> None:
     t = time.time()
     matches = faq_blocks(F, M, p0, args.iters, linear)
     method = f"gm_{args.start}" + (f"_lam{args.lam:g}" if linear is not None else "")
+    if args.variant != s.sel["chosen"]["variant"]:
+        method += f"_{args.variant}"
     evaluate(method, matches, time.time() - t)
 
     m = pd.DataFrame(rows)
-    f = OUT / "metrics.csv"
+    f = s.out / "metrics.csv"
     if f.exists():
         old = pd.read_csv(f)
         old = old[~((old.candidates == args.candidates) & old.method.isin(m.method))]
         m = pd.concat([old, m], ignore_index=True)
     m.to_csv(f, index=False)
     info = {
+        "target": args.target,
+        "stage1": args.stage1,
         "candidates": args.candidates,
         "method": method,
         "iters": args.iters,
-        "variant": s.sel["chosen"]["variant"],
+        "variant": args.variant,
+        "stage1_variant": s.sel["chosen"]["variant"],
         "fafb_rare": [len(b) for b in f_blocks],
-        "mcns_candidates": [len(b) for b in m_blocks],
+        "target_candidates": [len(b) for b in m_blocks],
         "candidates_without_side": int(len(s.cand) - sum(len(b) for b in m_blocks)),
         "fafb_rare_without_side": int(frare.sum() - sum(len(b) for b in f_blocks)),
         "n": n,
         "edges": {
             "fafb": {k: v.nnz for k, v in F.items()},
-            "mcns": {k: v.nnz for k, v in M.items()},
+            args.target: {k: v.nnz for k, v in M.items()},
         },
     }
-    (OUT / f"info_{args.candidates}_{method}.json").write_text(json.dumps(info, indent=2))
+    (s.out / f"info_{args.candidates}_{method}.json").write_text(json.dumps(info, indent=2))
 
 
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("--stage", choices=["weights", "match"], required=True)
+    ap.add_argument("--target", choices=sorted(STAGE1), default="mcns")
+    ap.add_argument("--stage1", help="stage-1 run under results/size_threshold/m2 (by target)")
+    ap.add_argument("--out", help="output directory under results/ (graph_matching_<target>)")
+    ap.add_argument("--variant", help="target graph for the matching (stage 1's chosen variant)")
     ap.add_argument("--candidates", choices=["gnn", "oracle"], default="gnn")
     ap.add_argument("--start", choices=["bary", "soft"], default="bary")
     ap.add_argument("--iters", type=int, default=30)
@@ -392,7 +436,11 @@ def main() -> None:
         "that lam = 1 makes it equal to the graph term at their one-to-one matching",
     )
     args = ap.parse_args()
-    OUT.mkdir(parents=True, exist_ok=True)
+    args.stage1 = args.stage1 or STAGE1[args.target]
+    args.out_dir = REPO_ROOT / "results" / (args.out or f"graph_matching_{args.target}")
+    if args.variant and args.stage == "weights":
+        ap.error("the soft probabilities are those of stage 1's variant; --variant is for match")
+    args.out_dir.mkdir(parents=True, exist_ok=True)
     s = setup(args)
     if args.stage == "weights":
         soft_probabilities(s)
