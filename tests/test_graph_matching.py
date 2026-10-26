@@ -184,3 +184,163 @@ def test_rare_types_and_candidates():
     stage1 = pd.DataFrame({"pred": ["B", "D", "C", "A"], "label": ["B", "C", None, "C"]})
     assert gmm.candidates(stage1, sizes, "gnn").tolist() == [0, 2]
     assert gmm.candidates(stage1, sizes, "oracle").tolist() == [0, 1, 3]
+
+
+def test_file_candidates_two_tier_and_degrade_args(tmp_path):
+    sizes = pd.Series({"A": 1, "B": 2, "C": 4, "D": 5, "E": 10, "F": 30})
+    stage1 = pd.DataFrame({"root_id": [11, 12, 13, 14], "pred": ["B", "E", "F", "D"]})
+    pd.DataFrame({"root_id": [14, 12]}).to_parquet(tmp_path / "candidates_x.parquet")
+    assert gmm.candidates(stage1, sizes, "file:x", tmp_path).tolist() == [1, 3]
+    assert gmm.cand_tag("file:x") == "x" and gmm.cand_tag("gnn") == "gnn"
+    # not assigned and the stage-1 type in the coarse label space (>= 10): coarse type
+    pred = np.array(["B", "E", "F", "C"], dtype=object)
+    assigned = np.array([False, False, False, True])
+    coarse = np.array(["E", "F", "E", "F"], dtype=object)
+    out = gmm.two_tier(pred, assigned, stage1.pred.to_numpy(), coarse, 10, sizes)
+    assert out.tolist() == ["B", "F", "E", "C"]
+    full = gmm.degrade_args({"target_retention": 1.0})
+    assert full == {
+        "retention": 1.0,
+        "retention_seed": 2,
+        "exclude_types": (),
+        "crop_fraction": 0.0,
+    }
+    thin = gmm.degrade_args({"target_retention": 0.35, "retention_seed": 3, "target_crop": None})
+    assert thin["retention"] == 0.35 and thin["retention_seed"] == 3 and thin["crop_fraction"] == 0
+
+
+def test_mass_selection_per_side():
+    cs = importlib.import_module("candidate_selection")
+    side = np.array(["left", "left", "left", "right", "right", ""], dtype=object)
+    score = np.array([0.9, 0.1, 0.5, 0.2, 0.8, 1.0])
+    none = np.zeros(6, bool)
+    k = {"left": 2, "right": 1}
+    assert np.nonzero(cs.top_by_side(score, side, k, none))[0].tolist() == [0, 2, 4]
+    base = np.array([False, True, False, False, False, True])  # kept; filled up to k per side
+    assert np.nonzero(cs.top_by_side(score, side, k, base))[0].tolist() == [0, 1, 4, 5]
+
+
+def test_size_threshold_run_names():
+    st = importlib.import_module("size_threshold")
+    assert st.label_free_dir("mcns", "consistency") == "label_free"
+    assert st.label_free_dir("banc", "size_agreement") == "label_free_banc_size_agreement"
+    assert st.label_free_dir("mcns", "size_agreement") == "label_free_mcns_size_agreement"
+    thin = {"retention": 0.35}
+    assert (
+        st.label_free_dir("mcns", "size_agreement", thin) == "label_free_mcns_r0.35_size_agreement"
+    )
+    other = {"retention": 0.25, "retention_seed": 3, "exclude": ("JO-A",)}
+    assert (
+        st.label_free_dir("mcns", "consistency", other)
+        == "label_free_mcns_r0.25_seed3_x_consistency"
+    )
+
+
+def test_lap_capacity():
+    rng = np.random.default_rng(0)
+    g = rng.random((6, 6))
+    rows, cols = gmm.lap_capacity(g, 1, 4)
+    ref = linear_sum_assignment(g, maximize=True)
+    assert g[rows, cols].sum() == pytest.approx(g[ref].sum())
+    g = np.zeros((4, 4))
+    g[0, :3] = 1.0  # three columns prefer row 0; with capacity 2 it takes two of them
+    rows, cols = gmm.lap_capacity(g, 2, 3)
+    assert sorted(cols) == [0, 1, 2, 3] and (rows == 0).sum() == 2
+
+
+def test_centered_gradient_matches_dense_centering():
+    f, m, f_blocks, m_blocks, _ = _two_brains((30, 25), seed=5)
+    F, M = gm.subgraph(f, *f_blocks, 30), gm.subgraph(m, *m_blocks, 30)
+    rng = np.random.default_rng(5)
+    P = [gm.sinkhorn(rng.random((30, 30))).astype(np.float32) for _ in range(2)]
+
+    def centered(a):
+        a = a.toarray().astype(np.float64)
+        return a - np.outer(a.sum(1), a.sum(0)) / a.sum()
+
+    Fc = {k: centered(v) for k, v in F.items()}
+    Mc = {k: centered(v) for k, v in M.items()}
+    ref = gmm.gradient(Fc, Mc, [p.astype(np.float64) for p in P])
+    got = gmm.centered_gradient(gmm.as32(F), gmm.as32(M), P)
+    for r, g in zip(ref, got, strict=True):
+        assert np.allclose(g, r, atol=1e-3 * np.abs(r).max())
+
+
+def test_absorb_reject():
+    gc = np.array([[2.0, -1.0, 0.5], [0.1, 0.3, -2.0], [0.0, 0.0, 0.0]])  # row 2: dummy
+    fm = np.array([0, 1, 2])  # candidate 2 sits on the dummy
+    absorbed, rejected, own = gmm.absorb_reject(gc, fm, 2)
+    assert absorbed.tolist() == [0, 1, 0]  # absorbed onto FAFB 0 (gain 0.5 > 0)
+    assert np.isnan(own[2]) and own[:2] == pytest.approx([2.0, 0.3])
+    gc[1, 1] = -0.3
+    absorbed, rejected, _ = gmm.absorb_reject(gc, fm, 2)
+    assert rejected.tolist() == [0, -1, 0]
+
+
+@pytest.mark.skipif(
+    not (ROOT / "data/processed/neurons.parquet").exists(), reason="needs the FAFB type sizes"
+)
+def test_match_end_to_end_with_absorb_and_capacity(tmp_path):
+    """match() on two synthetic brains labeled with real 2-4-neuron FAFB types: the matching
+    recovers the types, and the absorb / reject / capacity variants are reported."""
+    stratify = importlib.import_module("stratify")
+    types = stratify.fafb_types()
+    sizes = (40, 30)
+    rng = np.random.default_rng(1)
+    n = sum(sizes)
+    s_, d_, w = _edges(rng, n, 0.08)
+    sigmas = [rng.permutation(k) for k in sizes]
+    pos = np.concatenate([sigmas[0], sizes[0] + sigmas[1]])
+    order = rng.permutation(n)
+    node = np.concatenate([order[: sizes[0]], order[sizes[0] :]])[pos]
+    extra = 4  # isolated left candidates beyond FAFB's left neurons: they go to dummies
+    names = list(types.index[types["size"].between(2, 4)][:n])
+    fside = np.array(["left"] * sizes[0] + ["right"] * sizes[1], dtype=object)
+    fafb = _graph(s_, d_, w, n)
+    fafb.label_names, fafb.y = names, torch.arange(n)
+    fafb.side, fafb.node_ids = fside, torch.arange(1000, 1000 + n)
+    tgt = _graph(node[s_], node[d_], w, n + extra)
+    tside = np.empty(n + extra, dtype=object)
+    tside[node] = fside
+    tside[n:] = "left"
+    tlabel = np.empty(n + extra, dtype=object)
+    tlabel[node] = names
+    tgt.side, tgt.node_ids = tside, torch.arange(n + extra)
+    stage1 = pd.DataFrame(
+        {
+            "root_id": np.arange(n + extra),
+            "label": tlabel,
+            "pred": names[0],
+            "pred_selected": names[0],
+        }
+    )
+    s = SimpleNamespace(
+        sel={"chosen": {"variant": "raw"}},
+        fafb=fafb,
+        tgt=tgt,
+        stage1=stage1,
+        sizes=types["size"],
+        cand=np.arange(n + extra),
+        out=tmp_path,
+    )
+    args = SimpleNamespace(
+        candidates="gnn",
+        target="mcns",
+        fallback=[],
+        start="bary",
+        iters=30,
+        lam=0.0,
+        variant="raw",
+        capacity=2,
+        cap_iters=3,
+        stage1="synthetic",
+    )
+    gmm.match(s, args)
+    m = pd.read_csv(tmp_path / "metrics.csv")
+    acc = m[m.subset == "2-4 (MCNS label)"].set_index("method").acc
+    for method in ("gm_bary", "gm_bary_absorb", "gm_bary_absorb_reject", "gm_bary_cap2"):
+        assert method in acc.index
+    assert acc["gm_bary"] == 1.0 and acc["stage 1 (label-free GNN)"] < 0.1
+    out = pd.read_parquet(tmp_path / "matches_gnn_gm_bary.parquet")
+    assert (out.fafb_root_id[out.label.notna()] >= 1000).all()
+    assert (out.fafb_root_id[out.label.isna()] == -1).all()  # isolated: on dummies

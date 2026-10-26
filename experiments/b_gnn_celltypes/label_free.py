@@ -33,7 +33,9 @@ reference, agreement between the seeds' labelings), to compare selection rules
 (selection_rules.py).
 
 Writes results/<out>/<label>/candidates.csv, selected.json, predictions.parquet (per neuron: the
-+ NTAC labeling, and the chosen candidate without and with prior matching) and summary.md.
++ NTAC labeling, and the chosen candidate without and with prior matching), prior_weights.npz
+(each candidate preprocessing's prior-matching weights, seeds x types, key weights_key) and
+summary.md.
 
 Usage: python experiments/b_gnn_celltypes/label_free.py [--models transfer2] [--score-all]
        python experiments/b_gnn_celltypes/label_free.py --source mcns --target fafb
@@ -249,6 +251,11 @@ def seed_outputs(paths, src, tgt, norm: str, args, covered: dict) -> tuple[list,
     return seed_probs, seed_weights, refs
 
 
+def weights_key(name: str, norm: str) -> str:
+    """Key of a candidate's prior-matching weights in prior_weights.npz."""
+    return f"{name.replace('/', '+')}__{norm}"
+
+
 def adjusted(seed_probs: list, seed_weights: list, rho: float) -> tuple[np.ndarray, list]:
     """Ensemble labeling (argmax of the mean adjusted probabilities) and each seed's labeling,
     with prior matching of strength rho."""
@@ -270,6 +277,7 @@ def run_label(label: str, args, out_dir) -> dict:
     used_models = sorted({str(m) for _, paths, _, _ in cases for m in paths})
 
     rows, preds, ensembles = [], {}, {}  # keyed by (name, norm, rho)
+    weights = {}  # prior-matching weights (seeds x K) per (name, norm), saved for reuse
     norms = NORMS + (("coverage",) if args.coverage else ())
     covered = {}  # coverage weights per source graph
     for (name, paths, src, tgt), norm in itertools.product(cases, norms):
@@ -277,6 +285,7 @@ def run_label(label: str, args, out_dir) -> dict:
             covered[id(src)] = coverage_weights(src.node_ids.numpy(), args.coverage)
         assert tgt.num_nodes == len(y)
         seed_probs, seed_weights, refs = seed_outputs(paths, src, tgt, norm, args, covered)
+        weights[weights_key(name, norm)] = np.stack(seed_weights)
         reference = np.mean(refs, axis=0)
         for rho in RHOS:
             ensemble, seed_preds = adjusted(seed_probs, seed_weights, rho)
@@ -328,6 +337,7 @@ def run_label(label: str, args, out_dir) -> dict:
         "source": args.source,
         "target": args.target,
         "target_retention": args.target_retention,
+        "retention_seed": args.retention_seed,
         "target_exclude": list(args.target_exclude),
         "max_weight": args.max_weight,
         "source_retention": args.source_retention,
@@ -363,6 +373,7 @@ def run_label(label: str, args, out_dir) -> dict:
     d = out_dir / label
     d.mkdir(parents=True, exist_ok=True)
     cand.to_csv(d / "candidates.csv", index=False)
+    np.savez(d / "prior_weights.npz", **weights)
     (d / "selected.json").write_text(json.dumps(sel, indent=2))
     lab = torch.from_numpy(y >= 0)
     none = torch.zeros_like(lab)

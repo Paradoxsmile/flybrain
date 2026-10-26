@@ -22,11 +22,16 @@ m<size>/label_free/cell_type/* (as label_free.py) and strata.csv, types.csv, tab
 finished runs. Finished runs are skipped. With --target banc (only the label_free stage) or
 --select size_agreement, the label-free run goes to m<size>/label_free_<target>_<select> instead
 (e.g. label_free_banc_size_agreement; docs/banc_rare_protocol.md) and is not in the report.
+--target-retention / --retention-seed / --target-crop / --target-exclude degrade the target as in
+label_free.py (development sandbox, docs/candidate_selection_plan.md), e.g.
+m2/label_free_mcns_r0.35_size_agreement.
 
 Usage: python experiments/b_gnn_celltypes/size_threshold.py [--min-sizes 20 10 5 2]
        [--stages within label_free report] [--seeds 0 1 2] [--lr-seeds 0] [--epochs 300]
        python experiments/b_gnn_celltypes/size_threshold.py --min-sizes 2 --stages label_free
            --target banc --select size_agreement
+       python experiments/b_gnn_celltypes/size_threshold.py --min-sizes 2 --stages label_free
+           --select size_agreement --target-retention 0.35
 """
 
 from __future__ import annotations
@@ -143,14 +148,29 @@ def run_within(min_size: int, split: str, seed: int, epochs: int | None) -> None
     write_within(d, data, pred, train, test, cfg, fit, f"{seconds:.0f} s on {device}")
 
 
-def label_free_dir(target: str, select: str) -> str:
-    if target == "mcns" and select == "consistency":
+DEGRADE = {"retention": 1.0, "retention_seed": 2, "crop": 0.0, "exclude": ()}  # full target
+
+
+def label_free_dir(target: str, select: str, degrade: dict | None = None) -> str:
+    """m<size>/<this>: label_free for the full MCNS with type consistency, otherwise
+    label_free_<target>[_r<retention>[_seed<s>]][_crop<f>][_x]_<select>."""
+    d = {**DEGRADE, **(degrade or {})}
+    name = f"label_free_{target}"
+    if d["retention"] < 1:
+        name += f"_r{d['retention']:g}"
+        name += f"_seed{d['retention_seed']}" if d["retention_seed"] != 2 else ""
+    name += f"_crop{d['crop']:g}" if d["crop"] else ""
+    name += "_x" if d["exclude"] else ""
+    if name == "label_free_mcns" and select == "consistency":
         return "label_free"
-    return f"label_free_{target}_{select}"
+    return f"{name}_{select}"
 
 
-def run_label_free(min_size: int, target: str = "mcns", select: str = "consistency") -> None:
-    out_dir = OUT / f"m{min_size}" / label_free_dir(target, select)
+def run_label_free(
+    min_size: int, target: str = "mcns", select: str = "consistency", degrade: dict | None = None
+) -> None:
+    d = {**DEGRADE, **(degrade or {})}
+    out_dir = OUT / f"m{min_size}" / label_free_dir(target, select, d)
     if (out_dir / LABEL / "selected.json").exists():
         return
     if min_size == 20 and out_dir.name == "label_free":
@@ -174,13 +194,13 @@ def run_label_free(min_size: int, target: str = "mcns", select: str = "consisten
         synthetic=False,
         score_all=False,
         select=select,
-        target_retention=1.0,
-        retention_seed=2,
-        target_exclude=[],
+        target_retention=d["retention"],
+        retention_seed=d["retention_seed"],
+        target_exclude=list(d["exclude"]),
         max_weight=None,
         source_retention=1.0,
         target_coverage=None,
-        target_crop=0.0,
+        target_crop=d["crop"],
         prior="source",
         coverage=None,
     )
@@ -300,16 +320,27 @@ def main() -> None:
     p.add_argument("--epochs", type=int, default=None, help="override config epochs")
     p.add_argument("--target", default="mcns", choices=["mcns", "banc"], help="label_free stage")
     p.add_argument("--select", default="consistency", choices=["consistency", "size_agreement"])
+    p.add_argument("--target-retention", type=float, default=1.0, help="label_free: thin target")
+    p.add_argument("--retention-seed", type=int, default=2, help="thinning realization")
+    p.add_argument("--target-crop", type=float, default=0.0, help="share of cropped neurons")
+    p.add_argument("--target-exclude", nargs="*", default=[], help="cell types to remove")
     args = p.parse_args()
-    if args.target != "mcns" and set(args.stages) != {"label_free"}:
-        p.error("--target banc runs only the label_free stage")
+    degrade = {
+        "retention": args.target_retention,
+        "retention_seed": args.retention_seed,
+        "crop": args.target_crop,
+        "exclude": tuple(args.target_exclude),
+    }
+    degraded = args.target_retention < 1 or args.target_crop > 0 or bool(args.target_exclude)
+    if (args.target != "mcns" or degraded) and set(args.stages) != {"label_free"}:
+        p.error("--target banc and a degraded target run only the label_free stage")
     for min_size in args.min_sizes:
         if "within" in args.stages:
             for split, attr in SPLITS.items():
                 for seed in getattr(args, attr):
                     run_within(min_size, split, seed, args.epochs)
         if "label_free" in args.stages:
-            run_label_free(min_size, args.target, args.select)
+            run_label_free(min_size, args.target, args.select, degrade)
     if "report" in args.stages:
         report()
 
