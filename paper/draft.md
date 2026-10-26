@@ -215,17 +215,29 @@ We tested the two-stage pipeline on BANC under a third protocol (`docs/banc_rare
 
 All four expectations held: the two-stage pipeline beat stage 1 by at least 10 points on both references (+19.1 and +19.3, against +20.3 on MCNS); over all labeled neurons macro-F1 rose by at least 0.05 (0.19 → 0.40) without a loss in accuracy (+3.1 points); the rare stratum stayed below FAFB → MCNS (41.3 vs. 74.5 %); and matching withstood BANC's sparsity better than the GNN (with oracle candidates it kept 77 % of its MCNS accuracy, stage 1 41 %). Unlike for common types (Section 4.3), the morphology-matched reference gives the same result, so the gain is not an artifact of connectivity-based labels. The absolute level is limited by candidate selection: stage 1 finds only 54 % of the rare-type neurons on BANC (84 % on MCNS), while matching types 77 % of those it finds correctly.
 
+Because BANC is now spent for rare types, we improved candidate selection on development data only. MCNS thinned to 25 % of its synapses reproduces BANC's stage 1 (candidate recall 54.4 vs. 54.3 %, rare-stratum accuracy 19.2 vs. 22.2 %) and serves as a stand-in (Table 10).
+
+*Table 10. Candidate selection on development data: accuracy % / macro-F1 on the 2–4 stratum of MCNS, full and thinned to 25 % of its synapses.*
+
+| Candidates | Recall, thinned | Thinned (25 %) | Full MCNS |
+|---|---|---|---|
+| Stage-1 type after NTAC is 2–4 (as tested on BANC) | 54.4 % | 47.3 / 0.53 | 74.5 / 0.78 |
+| Stage-1 type before or after NTAC is 2–4 | 70.0 % | 60.1 / 0.65 | 81.6 / 0.83 |
+| Labeled rare-type neurons (oracle) | – | 82.0 / 0.84 | 85.3 / 0.87 |
+
+Selecting more candidates helps; ranking them better does not. At equal count, the GNN's total probability on rare types selects no better than its top type (under 1 recall point everywhere), but the union of the rare-type predictions before and after NTAC raises recall from 54 to 70 % on the thinned copy and from 84 to 92 % on full MCNS. Matching stays accurate on the added neurons (81 % on the rare-type neurons added in the thinned copy), and most added false positives end on dummies. The rule has no free parameter, and a second thinning realization gives the same result within 1–2 points. Two further changes were tested. Typing the neurons that are not matched with the coarser ≥ 10 model adds 2.5–3.7 points over all labeled neurons without changing the rare types (central-brain types lose up to 1 point). Letting a FlyWire neuron match two candidates, to absorb differences in type size, failed: with oracle candidates it fell from 85.3 to 76.1 %, because candidates piled onto a few well-connected neurons. These are development results; the improved pipeline awaits a new pre-registered test.
+
 Lowering the minimum from 20 to 10 costs nothing after transfer: no type-size bin is worse (20–49 neurons: 80.4 vs. 77.0 %), and 255 types are added. Below 10, each step trades accuracy on common types for coverage: at ≥ 2 the 20–49 bin falls to 73.7 % and the largest types (≥ 1,000 neurons) from 95.1 to 92.6 %. The low central-brain accuracy of Section 4.2 reflects the few central-brain types in the ≥ 20 set, dominated by Kenyon cell subtypes; with 243 central-brain types at ≥ 10 it rises to 77.7 %, and with thousands of rare ones it settles at 62–64 %. Optic-lobe and visual projection types stay at 93–97 % at every threshold, while small ascending, descending and other types fall to 32 % at ≥ 2. Prior matching matters more with many types (+13.2 points at ≥ 2, +3.6 at ≥ 20). NTAC still adds 3–4 points of accuracy but lowers macro-F1 at ≥ 3 and ≥ 2 (0.62 → 0.57, 0.59 → 0.51), because it pulls neurons of rare types into common ones; for rare types the prior-matched labeling is the better endpoint.
 
 ### 4.7 What the model is worth to an annotation team
 
-A team typing a new connectome would not rely on wiring alone; it can label neurons by hand and propagate the labels with NTAC. We labeled k % of each type's neurons at random (three draws) and compared NTAC seeded with the hand labels only, NTAC seeded with the hand labels plus the GNN predictions on which three seeds agree (fixed seeds, as in Section 4.1), and NTAC with the label-free pipeline as a fallback for types that have no hand label (Figure 5, Table 10).
+A team typing a new connectome would not rely on wiring alone; it can label neurons by hand and propagate the labels with NTAC. We labeled k % of each type's neurons at random (three draws) and compared NTAC seeded with the hand labels only, NTAC seeded with the hand labels plus the GNN predictions on which three seeds agree (fixed seeds, as in Section 4.1), and NTAC with the label-free pipeline as a fallback for types that have no hand label (Figure 5, Table 11).
 
 ![Labeling effort](figures/label_effort.png)
 
 *Figure 5. Accuracy and macro-F1 on the neurons without a hand label, against the share of each type labeled by hand (mean over three draws, ≥ 20 label set). Dashed: the label-free pipeline without hand labels.*
 
-*Table 10. Hand labels NTAC alone needs (% of each type) to match GNN-seeded NTAC at k = 1 %.*
+*Table 11. Hand labels NTAC alone needs (% of each type) to match GNN-seeded NTAC at k = 1 %.*
 
 | Target | GNN + NTAC at 1 % | NTAC alone, by accuracy | NTAC alone, by macro-F1 |
 |---|---|---|---|
@@ -239,7 +251,7 @@ By accuracy, the GNN is worth about 1.3 % hand labels on all three references; f
 
 ## 5 Discussion
 
-**What carries over.** Anonymous wiring identifies cell types without labeled partners, within a connectome and across complete connectomes, and prior matching is the most robust ingredient of label-free transfer: it helped on every complete or sparse target (+3.6 to +17.5 points), even with types missing from the target. Of the selection criteria, none is reliable alone; combining a size-based and an agreement-based signal was robust on everything we tried before the hemibrain. The transfer also extends to rare types: about half of the types with only 2–4 neurons are recovered in another animal. For these types, pairing neurons by graph matching is the stronger principle within a connectome; the GNN's role there is to decide which neurons to match, which works across animals too (54 → 75 % on FAFB → MCNS, 22 → 41 % on BANC in a pre-registered test). On BANC the bottleneck is that step: the GNN finds only half of the rare-type neurons, while matching types three quarters of those it finds correctly.
+**What carries over.** Anonymous wiring identifies cell types without labeled partners, within a connectome and across complete connectomes, and prior matching is the most robust ingredient of label-free transfer: it helped on every complete or sparse target (+3.6 to +17.5 points), even with types missing from the target. Of the selection criteria, none is reliable alone; combining a size-based and an agreement-based signal was robust on everything we tried before the hemibrain. The transfer also extends to rare types: about half of the types with only 2–4 neurons are recovered in another animal. For these types, pairing neurons by graph matching is the stronger principle within a connectome; the GNN's role there is to decide which neurons to match, which works across animals too (54 → 75 % on FAFB → MCNS, 22 → 41 % on BANC in a pre-registered test). On BANC the bottleneck is that step: the GNN finds only half of the rare-type neurons, while matching types three quarters of those it finds correctly. On development data, selecting more candidates (the rare-type predictions before or after NTAC) recovers much of this loss (47 → 60 % on a BANC-like thinned copy), which a new held-out test has to confirm.
 
 **What does not.** Transfer degrades with reconstruction density and fails for partial volumes. Both remove context the model relies on: in a sparse reconstruction, connections; in a partial volume, partners outside it and parts of cut neurons. For typing a partial volume, a model would need to be trained on correspondingly truncated graphs or combined with morphology.
 
