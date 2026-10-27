@@ -79,14 +79,34 @@ def size_bin(n: float) -> str:
     return "< 20"
 
 
-def fafb_types() -> pd.DataFrame:
-    """Per FAFB cell type: region and size (number of FAFB neurons)."""
-    n = pd.read_parquet(REPO_ROOT / "data" / "processed" / "neurons.parquet")
+MANC_REGIONS = {  # nerve-cord test: super-class groups of the MANC types
+    "ventral_nerve_cord_intrinsic": "intrinsic",
+    "ascending": "ascending",
+    "ascending_visceral_circulatory": "ascending",
+    "descending": "descending",
+    "motor": "motor",
+    "sensory": "sensory",
+    "sensory_ascending": "sensory",
+    "sensory_descending": "sensory",
+}
+SOURCE_TABLES = {"fafb": "neurons.parquet", "manc": "manc_neurons.parquet"}
+
+
+def source_types(source: str = "fafb") -> pd.DataFrame:
+    """Per cell type of a source connectome (FAFB, or MANC for the nerve-cord test): region
+    and size (number of source neurons)."""
+    n = pd.read_parquet(REPO_ROOT / "data" / "processed" / SOURCE_TABLES[source])
     n = n.dropna(subset=["cell_type"])
     t = n.groupby("cell_type").agg(super_class=("super_class", "first"), size=("root_id", "size"))
-    t["region"] = t.super_class.map(REGIONS).fillna(OTHER)
+    regions = REGIONS if source == "fafb" else MANC_REGIONS
+    t["region"] = t.super_class.map(regions).fillna(OTHER)
     t["size_bin"] = t["size"].map(size_bin)
     return t
+
+
+def fafb_types() -> pd.DataFrame:
+    """Per FAFB cell type: region and size (number of FAFB neurons)."""
+    return source_types("fafb")
 
 
 def run_args(sel: dict, source: str, target: str) -> argparse.Namespace:

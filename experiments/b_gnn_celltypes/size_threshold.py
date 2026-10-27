@@ -26,12 +26,21 @@ finished runs. Finished runs are skipped. With --target banc (only the label_fre
 label_free.py (development sandbox, docs/candidate_selection_plan.md), e.g.
 m2/label_free_mcns_r0.35_size_agreement.
 
+--source manc trains and maps from MANC instead (the nerve-cord test, docs/vnc_rare_protocol.md):
+everything goes to results/size_threshold_manc/, the within stage trains on MANC (labels in MANC's
+label space) and the label_free stage maps to --target banc_cord or mcns_cord, e.g.
+m2/label_free_banc_cord_size_agreement. The report stage is FAFB-only.
+
 Usage: python experiments/b_gnn_celltypes/size_threshold.py [--min-sizes 20 10 5 2]
        [--stages within label_free report] [--seeds 0 1 2] [--lr-seeds 0] [--epochs 300]
        python experiments/b_gnn_celltypes/size_threshold.py --min-sizes 2 --stages label_free
            --target banc --select size_agreement
        python experiments/b_gnn_celltypes/size_threshold.py --min-sizes 2 --stages label_free
            --select size_agreement --target-retention 0.35
+       python experiments/b_gnn_celltypes/size_threshold.py --source manc --min-sizes 2 10
+           --stages within --seeds 0 1 2 --lr-seeds 0
+       python experiments/b_gnn_celltypes/size_threshold.py --source manc --min-sizes 2
+           --stages label_free --target banc_cord --select size_agreement
 """
 
 from __future__ import annotations
@@ -58,7 +67,10 @@ from flybrain.training import fit_gnn, load_model, predict
 from flybrain.utils import REPO_ROOT, get_device, set_seed
 
 HERE = Path(__file__).parent
-OUT = REPO_ROOT / "results" / "size_threshold"
+OUTS = {"fafb": "size_threshold", "manc": "size_threshold_manc"}  # under results/
+SOURCE = "fafb"  # set_source
+OUT = REPO_ROOT / "results" / OUTS[SOURCE]
+CORD_TARGETS = ("banc_cord", "mcns_cord")
 LABEL = "cell_type"
 SPLITS = {"random": "seeds", "left_right": "lr_seeds"}
 SIZE_BINS = [(2, 4), (5, 9), (10, 19), (20, 49), (50, 199), (200, 999), (1000, np.inf)]
@@ -74,8 +86,15 @@ def size_bin(n: float) -> str:
     return "1"
 
 
+def set_source(source: str) -> None:
+    """Train and map from `source` (fafb or manc): sets SOURCE and OUT."""
+    global SOURCE, OUT
+    SOURCE, OUT = source, REPO_ROOT / "results" / OUTS[source]
+
+
 def fafb_types() -> pd.DataFrame:
-    t = stratify.fafb_types()
+    """Per type of the source (FAFB unless set_source("manc")): size, region, size bin."""
+    t = stratify.source_types(SOURCE)
     t["size_bin"] = t["size"].map(size_bin)
     return t
 
@@ -123,7 +142,8 @@ def run_within(min_size: int, split: str, seed: int, epochs: int | None) -> None
     d = OUT / f"m{min_size}" / f"within_{split}" / f"s{seed}"
     if (d / "metrics.json").exists():
         return
-    if min_size == 20 and split == "random" and seed in REUSE["seeds"] and not epochs:
+    reusable = SOURCE == "fafb" and min_size == 20 and split == "random"
+    if reusable and seed in REUSE["seeds"] and not epochs:
         return reuse_within(seed)
     cfg = yaml.safe_load((HERE / "configs" / "cell_type.yaml").read_text())
     cfg.update(seed=seed, min_class_size=min_size, split=split)
@@ -131,7 +151,7 @@ def run_within(min_size: int, split: str, seed: int, epochs: int | None) -> None
         cfg["epochs"] = epochs
     set_seed(seed)
     device = get_device()
-    data = load_graph(LABEL, seed=seed, min_class_size=min_size)
+    data = load_graph(LABEL, seed=seed, min_class_size=min_size, dataset=SOURCE, source=SOURCE)
     train, val, test = make_split(data, split, seed=seed)
     start = time.time()
     lean = min_size < LEAN_BELOW
@@ -173,7 +193,7 @@ def run_label_free(
     out_dir = OUT / f"m{min_size}" / label_free_dir(target, select, d)
     if (out_dir / LABEL / "selected.json").exists():
         return
-    if min_size == 20 and out_dir.name == "label_free":
+    if SOURCE == "fafb" and min_size == 20 and out_dir.name == "label_free":
         # the paper's run (results/label_free), with its stages from stratify.py
         pred = stratify.labelings(REUSE["label_free"], "fafb", "mcns")
         sel = json.loads(
@@ -186,11 +206,11 @@ def run_label_free(
         sel["note"] = f"reused results/{REUSE['label_free']}"
         (out_dir / LABEL / "selected.json").write_text(json.dumps(sel, indent=2))
         return
-    label_free.LABELS[LABEL] = min_size  # the FAFB label space of this threshold
+    label_free.LABELS[LABEL] = min_size  # the source's label space of this threshold
     args = argparse.Namespace(
-        source="fafb",
+        source=SOURCE,
         target=target,
-        models=f"size_threshold/m{min_size}/models",
+        models=f"{OUTS[SOURCE]}/m{min_size}/models",
         synthetic=False,
         score_all=False,
         select=select,
@@ -318,7 +338,10 @@ def main() -> None:
     p.add_argument("--seeds", type=int, nargs="*", default=[0, 1, 2], help="random split")
     p.add_argument("--lr-seeds", type=int, nargs="*", default=[0], help="left -> right split")
     p.add_argument("--epochs", type=int, default=None, help="override config epochs")
-    p.add_argument("--target", default="mcns", choices=["mcns", "banc"], help="label_free stage")
+    p.add_argument("--source", default="fafb", choices=sorted(OUTS), help="source connectome")
+    p.add_argument(
+        "--target", default="mcns", choices=["mcns", "banc", *CORD_TARGETS], help="label_free stage"
+    )
     p.add_argument("--select", default="consistency", choices=["consistency", "size_agreement"])
     p.add_argument("--target-retention", type=float, default=1.0, help="label_free: thin target")
     p.add_argument("--retention-seed", type=int, default=2, help="thinning realization")
@@ -332,7 +355,15 @@ def main() -> None:
         "exclude": tuple(args.target_exclude),
     }
     degraded = args.target_retention < 1 or args.target_crop > 0 or bool(args.target_exclude)
-    if (args.target != "mcns" or degraded) and set(args.stages) != {"label_free"}:
+    set_source(args.source)
+    if args.source == "manc":
+        if "report" in args.stages:
+            p.error("--source manc: the report stage is FAFB-only")
+        if "label_free" in args.stages and args.target not in CORD_TARGETS:
+            p.error(f"--source manc maps to a nerve cord: --target {' or '.join(CORD_TARGETS)}")
+    elif args.target in CORD_TARGETS:
+        p.error("the nerve-cord targets need --source manc")
+    elif (args.target != "mcns" or degraded) and set(args.stages) != {"label_free"}:
         p.error("--target banc and a degraded target run only the label_free stage")
     for min_size in args.min_sizes:
         if "within" in args.stages:

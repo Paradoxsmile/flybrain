@@ -65,6 +65,19 @@ Candidate selection (docs/candidate_selection_plan.md):
 matches_*.parquet also hold the assigned FAFB root id (fafb_root_id, -1: none) and the centered
 gain of each matched candidate.
 
+Nerve-cord test (docs/vnc_rare_protocol.md): --source manc --target banc_cord | mcns_cord runs
+the same two stages from MANC (stage 1 under results/size_threshold_manc/m2, sizes and strata
+from stratify.source_types("manc")), scored against reference A (the stage-1 `label`), for
+banc_cord also against reference B (alt_type, BANC's curated type), with the 2-4 stratum also by
+MANC super-class group of the true type and by passing / not passing. Further options:
+- --candidates union: the target neurons whose stage-1 type after NTAC (pred) or prior-matched
+  type before NTAC (pred_selected) is a 2-4-neuron source type, from predictions.parquet alone
+  (label-free; candidate_selection.py's `union`);
+- --passing-block: the neurons that pass through the neck (graph attribute `passing`) form a
+  third block, whatever their side, in the source and the target; the objective sums over all
+  ordered pairs of the three blocks (with two blocks: exactly the four terms above). Method
+  names get the suffix _pass.
+
 Writes results/graph_matching_<target>/{soft_<candidates>.npz, metrics.csv, info_*.json,
 matches_*.parquet} (or results/<--out>/).
 
@@ -87,6 +100,7 @@ import label_free
 import lean_label_free
 import numpy as np
 import pandas as pd
+import scipy.sparse as sp
 import stratify
 import torch
 from graph_matching import sinkhorn, subgraph
@@ -96,14 +110,28 @@ from scipy.sparse.linalg import svds
 from flybrain.loading import load_graph
 from flybrain.utils import REPO_ROOT
 
-STAGE1_ROOT = REPO_ROOT / "results" / "size_threshold" / "m2"
+STAGE1_ROOTS = {  # stage-1 runs (size_threshold.py) by source
+    "fafb": REPO_ROOT / "results" / "size_threshold" / "m2",
+    "manc": REPO_ROOT / "results" / "size_threshold_manc" / "m2",
+}
+STAGE1_ROOT = STAGE1_ROOTS["fafb"]
 STAGE1 = {"mcns": "label_free", "banc": "label_free_banc_size_agreement"}  # default stage-1 runs
-REFERENCE = {"mcns": "MCNS label", "banc": "ref A"}  # the stage-1 `label`, in metrics.csv
+STAGE1_MANC = {  # nerve-cord test, source MANC
+    "banc_cord": "label_free_banc_cord_size_agreement",
+    "mcns_cord": "label_free_mcns_cord_size_agreement",
+}
+# the stage-1 `label`, in metrics.csv
+REFERENCE = {"mcns": "MCNS label", "banc": "ref A", "banc_cord": "ref A", "mcns_cord": "ref A"}
 MODELS = "size_threshold/m2/models"
+MODELS_BY_SOURCE = {"fafb": MODELS, "manc": "size_threshold_manc/m2/models"}
 MIN_SIZE, MAX_SIZE = 2, 4
 SIDES = ("left", "right")
-# <F[key], P_a M[key] P_c^T>: (key, a, c), blocks 0 = left, 1 = right
+# <F[key], P_a M[key] P_c^T>: (key, a, c), blocks 0 = left, 1 = right (2 = passing, see terms)
 TERMS = (("LL", 0, 0), ("RR", 1, 1), ("LR", 0, 1), ("RL", 1, 0))
+BLOCK_INDEX = {"L": 0, "R": 1, "P": 2}
+BLOCK_NAMES = ("left", "right", "passing")
+# with a passing block: the 5 further ordered pairs, after the 4 of TERMS
+PASSING_KEYS = ("PP", "LP", "PL", "RP", "PR")
 
 
 def degrade_args(sel: dict) -> dict:
@@ -118,11 +146,54 @@ def degrade_args(sel: dict) -> dict:
     }
 
 
-def graphs(target: str, variant: str, degrade: dict | None = None):
-    fafb = load_graph("cell_type", min_class_size=MIN_SIZE)
+def graphs(target: str, variant: str, degrade: dict | None = None, source: str = "fafb"):
+    """The source graph (FAFB or MANC) and the target, labels coded in the source's label space
+    of minimum type size 2."""
+    src = load_graph("cell_type", min_class_size=MIN_SIZE, dataset=source, source=source)
     extra = {f"{target}_variant": variant, **(degrade or {})}
-    tgt = load_graph("cell_type", min_class_size=MIN_SIZE, dataset=target, **extra)
-    return fafb, tgt
+    tgt = load_graph("cell_type", min_class_size=MIN_SIZE, dataset=target, source=source, **extra)
+    return src, tgt
+
+
+def terms(F: dict) -> list:
+    """(key, a, c) for each block pair of an adjacency dict: the first letter of the key is
+    the block of the presynaptic neuron (L, R, P), the second that of the postsynaptic one. For
+    the two-block dicts of graph_matching.subgraph this is TERMS, in the same order."""
+    return [(k, BLOCK_INDEX[k[0]], BLOCK_INDEX[k[1]]) for k in F]
+
+
+def block_adjacency(data, blocks: list, n: int) -> dict:
+    """graph_matching.subgraph for two blocks (left, right); with a third (passing) block, the
+    log1p(synapse) adjacencies of all 9 ordered block pairs, padded to n x n (keys LL, RR, LR,
+    RL, then PASSING_KEYS)."""
+    if len(blocks) == 2:
+        return subgraph(data, *blocks, n)
+    src, dst = data.edge_index.numpy()
+    w = np.log1p(data.edge_weight.numpy().astype(np.float64))
+    pos = []
+    for b in blocks:
+        p = np.full(data.num_nodes, -1)
+        p[b] = np.arange(len(b))
+        pos.append(p)
+    out = {}
+    for key in ("LL", "RR", "LR", "RL", *PASSING_KEYS):
+        a, b = pos[BLOCK_INDEX[key[0]]][src], pos[BLOCK_INDEX[key[1]]][dst]
+        keep = (a >= 0) & (b >= 0)
+        out[key] = sp.csr_matrix((w[keep], (a[keep], b[keep])), shape=(n, n))
+    return out
+
+
+def side_blocks(idx: np.ndarray, side, passing, pooled: bool) -> list:
+    """The neurons idx split into matching blocks: by side (left, right), and with pooled the
+    passing neurons, whatever their side, as a third block. Neurons of no block (non-passing
+    without a left/right side) are not matched."""
+    side = np.asarray(side)
+    if not pooled:
+        return [idx[side[idx] == s] for s in SIDES]
+    if passing is None:
+        raise ValueError("--passing-block needs graphs with a `passing` attribute")
+    p = np.asarray(passing, dtype=bool)[idx]
+    return [idx[(side[idx] == s) & ~p] for s in SIDES] + [idx[p]]
 
 
 def labels(data) -> np.ndarray:
@@ -136,9 +207,10 @@ def rare(type_names, sizes: pd.Series) -> np.ndarray:
     return (s >= MIN_SIZE) & (s <= MAX_SIZE)
 
 
-def morph_labels(tgt) -> np.ndarray:
-    """Reference B (BANC): the morphology-matched FAFB type where it is in the label space."""
-    morph = pd.Series(tgt.morph_type, dtype=object)
+def morph_labels(tgt, attr: str = "morph_type") -> np.ndarray:
+    """Reference B: the morphology-matched FAFB type (BANC) or, with attr="alt_type", BANC's
+    curated type (BANC cord), where it is in the label space."""
+    morph = pd.Series(getattr(tgt, attr), dtype=object)
     return morph.where(morph.isin(set(tgt.label_names))).to_numpy(dtype=object)
 
 
@@ -150,6 +222,8 @@ def candidates(stage1: pd.DataFrame, sizes: pd.Series, kind: str, directory=None
         return np.nonzero(rare(stage1.pred, sizes))[0]
     if kind == "oracle":
         return np.nonzero(stage1.label.notna().to_numpy() & rare(stage1.label, sizes))[0]
+    if kind == "union":
+        return np.nonzero(rare(stage1.pred, sizes) | rare(stage1.pred_selected, sizes))[0]
     ids = pd.read_parquet(directory / f"candidates_{cand_tag(kind)}.parquet").root_id
     return np.sort(pd.Series(np.arange(len(stage1)), index=stage1.root_id).loc[ids].to_numpy())
 
@@ -196,6 +270,10 @@ def score_rows(pred, references: list, regions: list, sizes: pd.Series, types, m
     subsets += [(name, lab, f"2-4 ({name}), {region}", in_rare & k) for region, k in regions]
     s = pd.Series(lab).map(sizes).fillna(0).to_numpy()
     subsets += [(name, lab, "5-19", (s >= 5) & (s <= 19)), (name, lab, ">= 20", s >= 20)]
+    subsets += [
+        (name, lab, "5-9", (s >= 5) & (s <= 9)),
+        (name, lab, "10-19", (s >= 10) & (s <= 19)),
+    ]
     for name, lab, subset, k in subsets:
         rows.append({"reference": name, "subset": subset, **score(lab, pred, k, types)})
     return rows
@@ -203,17 +281,26 @@ def score_rows(pred, references: list, regions: list, sizes: pd.Series, types, m
 
 def setup(args):
     """Graphs, stage-1 labeling and the candidates (indices into the target)."""
-    d = STAGE1_ROOT / args.stage1 / "cell_type"
+    source = getattr(args, "source", "fafb")
+    d = STAGE1_ROOTS[source] / args.stage1 / "cell_type"
     sel = json.loads((d / "selected.json").read_text())
-    assert sel["target"] == args.target
+    assert sel["target"] == args.target and sel.get("source", "fafb") == source
     args.variant = args.variant or sel["chosen"]["variant"]
-    fafb, tgt = graphs(args.target, args.variant, degrade_args(sel))
+    fafb, tgt = graphs(args.target, args.variant, degrade_args(sel), source)  # fafb: the source
     stage1 = pd.read_parquet(d / "predictions.parquet")
     assert (stage1.root_id.to_numpy() == tgt.node_ids.numpy()).all()
-    sizes = stratify.fafb_types()["size"]
+    types = stratify.source_types(source)
+    sizes = types["size"]
     cand = candidates(stage1, sizes, args.candidates, d)
     return SimpleNamespace(
-        sel=sel, fafb=fafb, tgt=tgt, stage1=stage1, sizes=sizes, cand=cand, out=args.out_dir
+        sel=sel,
+        fafb=fafb,
+        tgt=tgt,
+        stage1=stage1,
+        sizes=sizes,
+        types=types,
+        cand=cand,
+        out=args.out_dir,
     )
 
 
@@ -224,7 +311,7 @@ def soft_probabilities(s) -> None:
     label_free.LABELS["cell_type"] = MIN_SIZE
     chosen = s.sel["chosen"]
     ns = argparse.Namespace(prior=s.sel["prior"], max_weight=s.sel["max_weight"])
-    paths = label_free.model_paths(MODELS, "cell_type")
+    paths = label_free.model_paths(MODELS_BY_SOURCE[s.sel.get("source", "fafb")], "cell_type")
     t = time.time()
     probs, weights, _ = lean_label_free.seed_outputs(paths, s.fafb, s.tgt, chosen["norm"], ns, {})
     print(f"prior matching: {time.time() - t:.0f} s", flush=True)
@@ -260,7 +347,7 @@ def as32(adj: dict) -> dict:
 def gradient(F: dict, M: dict, P: list) -> list:
     """d/dP_a of sum over TERMS of <F[k], P_a M[k] P_c^T>: F[k] P_c M[k]^T and F[k]^T P_a M[k]."""
     G = [np.zeros_like(p) for p in P]
-    for k, a, c in TERMS:
+    for k, a, c in terms(F):
         G[a] += F[k] @ (M[k] @ P[c].T).T
         G[c] += F[k].T @ (M[k].T @ P[a].T).T
     return G
@@ -268,7 +355,7 @@ def gradient(F: dict, M: dict, P: list) -> list:
 
 def bilinear(F: dict, M: dict, D: list, E: list) -> float:
     """sum over TERMS of <F[k], D_a M[k] E_c^T> = <F[k] E_c, D_a M[k]>."""
-    return float(sum(((F[k] @ E[c]) * (M[k].T @ D[a].T).T).sum() for k, a, c in TERMS))
+    return float(sum(((F[k] @ E[c]) * (M[k].T @ D[a].T).T).sum() for k, a, c in terms(F)))
 
 
 def rank1_assignment(g: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -375,7 +462,7 @@ def centered_gradient(F: dict, M: dict, P: list) -> list:
         return np.outer(np.asarray(a, np.float32), np.asarray(b, np.float32))
 
     G = gradient(F, M, P)
-    for k, a, c in TERMS:
+    for k, a, c in terms(F):
         f, m = F[k], M[k]
         W, V = float(f.sum()), float(m.sum())
         if W == 0 or V == 0:
@@ -450,25 +537,26 @@ def score(truth: np.ndarray, pred: np.ndarray, subset: np.ndarray, types) -> dic
 
 
 def match(s, args) -> None:
-    flabel = labels(s.fafb)
-    fside = np.asarray(s.fafb.side)
-    mside = np.asarray(s.tgt.side)
+    flabel = labels(s.fafb)  # s.fafb: the source graph (FAFB or MANC)
+    pooled = getattr(args, "passing_block", False)
     frare = rare(flabel, s.sizes)
-    f_blocks = [np.nonzero(frare & (fside == side))[0] for side in SIDES]
-    m_blocks = [s.cand[mside[s.cand] == side] for side in SIDES]
+    fpass = getattr(s.fafb, "passing", None)
+    f_blocks = side_blocks(np.nonzero(frare)[0], s.fafb.side, fpass, pooled)
+    m_blocks = side_blocks(s.cand, s.tgt.side, getattr(s.tgt, "passing", None), pooled)
     n = max(len(b) for b in f_blocks + m_blocks)
     print(
-        f"FAFB rare {[len(b) for b in f_blocks]}, candidates {[len(b) for b in m_blocks]}"
+        f"source rare {[len(b) for b in f_blocks]}, candidates {[len(b) for b in m_blocks]}"
         f" (of {len(s.cand)}), n = {n}",
         flush=True,
     )
-    F = as32(subgraph(s.fafb, *f_blocks, n))
-    M = as32(subgraph(s.tgt, *m_blocks, n))
+    F = as32(block_adjacency(s.fafb, f_blocks, n))
+    M = as32(block_adjacency(s.tgt, m_blocks, n))
     print({"F": {k: v.nnz for k, v in F.items()}, "M": {k: v.nnz for k, v in M.items()}})
 
     truth = s.stage1.label.to_numpy(dtype=object)
     stage1 = s.stage1.pred.to_numpy(dtype=object)
-    types = stratify.fafb_types()
+    types = getattr(s, "types", None)
+    types = stratify.fafb_types() if types is None else types
     rows = []
     tag = cand_tag(args.candidates)
     ref = REFERENCE[args.target]
@@ -478,6 +566,13 @@ def match(s, args) -> None:
         references.append(("ref B", morph_labels(s.tgt)))
         region = np.asarray(s.tgt.region)
         regions = [(r, region == r) for r in ("central_brain", "optic_lobe")]
+    if args.target in STAGE1_MANC:  # nerve cord: by super-class group of the true type
+        if args.target == "banc_cord":
+            references.append(("ref B", morph_labels(s.tgt, "alt_type")))
+        group = pd.Series(truth, dtype=object).map(types.region).to_numpy(dtype=object)
+        regions = [(r, group == r) for r in sorted(types.region.unique())]
+        passing = np.asarray(s.tgt.passing, dtype=bool)
+        regions += [("passing", passing), ("not passing", ~passing)]
     root_ids = s.tgt.node_ids.numpy()
     fallbacks = [load_fallback(run, root_ids, s.sizes) for run in args.fallback]
     fafb_ids = s.fafb.node_ids.numpy()
@@ -567,13 +662,15 @@ def match(s, args) -> None:
             p0.append(sinkhorn(soft).astype(np.float32))
         del softs
     else:
-        p0, linear = [bary, bary.copy()], None
+        p0, linear = [bary] + [bary.copy() for _ in f_blocks[1:]], None
     del bary
     t = time.time()
     matches = faq_blocks(F, M, p0, args.iters, linear)
     method = f"gm_{args.start}" + (f"_lam{args.lam:g}" if linear is not None else "")
     if args.variant != s.sel["chosen"]["variant"]:
         method += f"_{args.variant}"
+    if pooled:
+        method += "_pass"
     evaluate_matching(method, matches, time.time() - t)
     if args.capacity > 1:  # idea 3b: each FAFB neuron may take up to c candidates
         t = time.time()
@@ -596,7 +693,10 @@ def match(s, args) -> None:
         "iters": args.iters,
         "variant": args.variant,
         "stage1_variant": s.sel["chosen"]["variant"],
-        "fafb_rare": [len(b) for b in f_blocks],
+        "source": getattr(args, "source", "fafb"),
+        "blocks": list(BLOCK_NAMES[: len(f_blocks)]),
+        "fafb_rare": [len(b) for b in f_blocks],  # the source's rare neurons per block
+        "source_rare": [len(b) for b in f_blocks],
         "target_candidates": [len(b) for b in m_blocks],
         "candidates_without_side": int(len(s.cand) - sum(len(b) for b in m_blocks)),
         "fafb_rare_without_side": int(frare.sum() - sum(len(b) for b in f_blocks)),
@@ -613,14 +713,21 @@ def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("--stage", choices=["weights", "match"], required=True)
-    ap.add_argument("--target", choices=sorted(STAGE1), default="mcns")
-    ap.add_argument("--stage1", help="stage-1 run under results/size_threshold/m2 (by target)")
+    ap.add_argument("--source", choices=sorted(STAGE1_ROOTS), default="fafb")
+    ap.add_argument("--target", choices=sorted({*STAGE1, *STAGE1_MANC}), default="mcns")
+    ap.add_argument("--stage1", help="stage-1 run under results/size_threshold[_manc]/m2")
     ap.add_argument("--out", help="output directory under results/ (graph_matching_<target>)")
     ap.add_argument("--variant", help="target graph for the matching (stage 1's chosen variant)")
     ap.add_argument(
         "--candidates",
         default="gnn",
-        help="gnn, oracle or file:<name> (candidates_<name>.parquet in the stage-1 directory)",
+        help="gnn, union, oracle or file:<name> (candidates_<name>.parquet in the stage-1 "
+        "directory)",
+    )
+    ap.add_argument(
+        "--passing-block",
+        action="store_true",
+        help="match the neurons that pass through the neck in a third block, whatever their side",
     )
     ap.add_argument(
         "--fallback",
@@ -647,12 +754,18 @@ def main() -> None:
         "that lam = 1 makes it equal to the graph term at their one-to-one matching",
     )
     args = ap.parse_args()
-    args.stage1 = args.stage1 or STAGE1[args.target]
+    defaults = STAGE1_MANC if args.source == "manc" else STAGE1
+    if args.target not in defaults:
+        ap.error(f"--source {args.source} goes with --target {' / '.join(sorted(defaults))}")
+    args.stage1 = args.stage1 or defaults[args.target]
     args.out_dir = REPO_ROOT / "results" / (args.out or f"graph_matching_{args.target}")
     if args.variant and args.stage == "weights":
         ap.error("the soft probabilities are those of stage 1's variant; --variant is for match")
-    if args.candidates not in ("gnn", "oracle") and not args.candidates.startswith("file:"):
-        ap.error("--candidates: gnn, oracle or file:<name>")
+    named = ("gnn", "union", "oracle")
+    if args.candidates not in named and not args.candidates.startswith("file:"):
+        ap.error("--candidates: gnn, union, oracle or file:<name>")
+    if args.candidates == "union" and (args.stage == "weights" or args.start == "soft"):
+        ap.error("union candidates run only --stage match from the barycenter")
     if args.candidates.startswith("file:") and (args.stage == "weights" or args.start == "soft"):
         ap.error("file candidates run only --stage match from the barycenter")
     args.out_dir.mkdir(parents=True, exist_ok=True)

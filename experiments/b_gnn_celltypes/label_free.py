@@ -54,12 +54,14 @@ import torch
 from sklearn.metrics import f1_score
 
 from flybrain.adapt import em_prior, prior_weights
+from flybrain.banc import CORD_VARIANTS as BANC_CORD_VARIANTS
 from flybrain.banc import VARIANTS as BANC_VARIANTS
 from flybrain.consistency import type_consistency
 from flybrain.coverage import COVERAGES, TARGET_EXCLUSIONS, coverage_weights
 from flybrain.features import normalize_features
 from flybrain.hemibrain import VARIANTS as HEMIBRAIN_VARIANTS
 from flybrain.loading import encode_labels, load_graph
+from flybrain.mcns import CORD_VARIANTS as MCNS_CORD_VARIANTS
 from flybrain.mcns import VARIANTS as MCNS_VARIANTS
 from flybrain.ntac import ntac_from_predictions
 from flybrain.selection import RULES, choose, choose_all
@@ -76,10 +78,14 @@ DATASET_VARIANTS = {
     "mcns": list(MCNS_VARIANTS),
     "banc": list(BANC_VARIANTS),
     "hemibrain": list(HEMIBRAIN_VARIANTS),
+    "manc": [None],
+    "banc_cord": list(BANC_CORD_VARIANTS),
+    "mcns_cord": list(MCNS_CORD_VARIANTS),
 }
+SINGLE_GRAPH = ("fafb", "manc")  # sources built in one preprocessing only
 SCORING = {"fafb": "fafb", "mcns": "raw", "banc": "raw", "hemibrain": "raw"}  # least
-# preprocessed target graph
-DEFAULT_MODELS = {"fafb": "transfer2", "mcns": "transfer_rev"}
+SCORING.update(banc_cord="raw", mcns_cord="raw")  # preprocessed target graph
+DEFAULT_MODELS = {"fafb": "transfer2", "mcns": "transfer_rev"}  # MANC: --models (size_threshold)
 THINNING_SOURCE_SEED = 1  # thinning.py's source realization
 DEFAULT_OUT = {("fafb", "mcns"): "label_free", ("mcns", "fafb"): "label_free_rev"}
 
@@ -97,18 +103,31 @@ def model_paths(models: str, label: str, retention: float = 1.0) -> list:
 
 
 def variants(dataset: str, synthetic: bool) -> list:
-    if dataset == "fafb":
+    if dataset in SINGLE_GRAPH:
         return [None]
     return ["synthetic"] if synthetic else DATASET_VARIANTS[dataset]
 
 
-def load(dataset: str, label: str, variant, synthetic: bool, **degrade):
+def load(dataset: str, label: str, variant, synthetic: bool, space: str = "fafb", **degrade):
+    """A source or target graph, its labels coded in the label space of `space` (FAFB, or MANC
+    for the nerve-cord test)."""
     extra = dict(degrade)
-    if dataset != "fafb":  # synthetic graphs ignore the variant
+    if dataset not in SINGLE_GRAPH:  # synthetic graphs ignore the variant
         extra[f"{dataset}_variant"] = DATASET_VARIANTS[dataset][0] if synthetic else variant
     return load_graph(
-        label, synthetic=synthetic, min_class_size=LABELS[label], dataset=dataset, **extra
+        label,
+        synthetic=synthetic,
+        min_class_size=LABELS[label],
+        dataset=dataset,
+        source=space,
+        **extra,
     )
+
+
+def label_space(args) -> str:
+    """The dataset whose label space the run uses: MANC for a MANC source, else FAFB (an MCNS
+    source is coded in FAFB's label space too)."""
+    return "manc" if getattr(args, "source", "fafb") == "manc" else "fafb"
 
 
 def js_divergence(p: np.ndarray, q: np.ndarray) -> float:
@@ -137,15 +156,17 @@ def setups(label: str, args):
         "exclude_super_classes": exclusions.get("exclude_super_classes", ()),
         "crop_fraction": args.target_crop,
     }
+    space = label_space(args)
     targets = {
-        tv or args.target: load(args.target, label, tv, args.synthetic, **degrade) for tv in tvs
+        tv or args.target: load(args.target, label, tv, args.synthetic, space, **degrade)
+        for tv in tvs
     }
     cases = []
     for sv in variants(args.source, args.synthetic):
         suffixed = sv is not None and not args.synthetic
         models = f"{args.models}_{sv}" if suffixed else args.models
         paths = model_paths(models, label, args.source_retention)
-        src = load(args.source, label, sv, args.synthetic)
+        src = load(args.source, label, sv, args.synthetic, space)
         if args.source_retention < 1:  # the copy the models were trained on (thinning.py)
             src = thin_graph(src, args.source_retention, seed=THINNING_SOURCE_SEED)
         for tkey, tgt in targets.items():
@@ -190,15 +211,17 @@ def breakdown(g, pred, label: str) -> dict:
             continue
         out[f"{region}_n"] = int(mask.sum())
         out[f"{region}_acc"], out[f"{region}_macro_f1"] = score(pred[mask], y[mask])
-    if label == "cell_type" and getattr(g, "morph_type", None) is not None:
-        morph = encode_labels(pd.Series(g.morph_type).replace("", pd.NA), label_names=g.label_names)
-        morph = morph[0]
-        if not (morph >= 0).any():
-            return out
-        out["morph_n"] = int((morph >= 0).sum())
-        out["morph_acc"], out["morph_macro_f1"] = score(pred, morph)
-        both = (morph >= 0) & (y >= 0)
-        out["morph_agrees_with_label"] = float((morph[both] == y[both]).mean())
+    for attr, key in (("morph_type", "morph"), ("alt_type", "alt")):  # BANC; BANC cord (ref B)
+        if label != "cell_type" or getattr(g, attr, None) is None:
+            continue
+        ref = pd.Series(getattr(g, attr)).replace("", pd.NA)
+        ref = encode_labels(ref, label_names=g.label_names)[0]
+        if not (ref >= 0).any():
+            continue
+        out[f"{key}_n"] = int((ref >= 0).sum())
+        out[f"{key}_acc"], out[f"{key}_macro_f1"] = score(pred, ref)
+        both = (ref >= 0) & (y >= 0)
+        out[f"{key}_agrees_with_label"] = float((ref[both] == y[both]).mean())
     return out
 
 
@@ -411,8 +434,12 @@ def summary_lines(sels: list, source: str, target: str) -> list:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--source", default="fafb", choices=["fafb", "mcns"])
-    p.add_argument("--target", default="mcns", choices=["mcns", "fafb", "banc", "hemibrain"])
+    p.add_argument("--source", default="fafb", choices=["fafb", "mcns", "manc"])
+    p.add_argument(
+        "--target",
+        default="mcns",
+        choices=["mcns", "fafb", "banc", "hemibrain", "banc_cord", "mcns_cord"],
+    )
     p.add_argument("--models", default=None, help="results subdirectory (prefix for MCNS)")
     p.add_argument("--labels", nargs="+", default=list(LABELS), choices=list(LABELS))
     p.add_argument("--score-all", action="store_true", help="consistency on all target graphs")
@@ -444,6 +471,11 @@ def main() -> None:
         p.error("--prior coverage needs --coverage")
     if args.source == args.target and not degraded:
         p.error("source and target must differ unless the target is degraded")
+    if args.source == "manc" and not args.models:
+        p.error("--source manc needs --models (e.g. size_threshold_manc/m2/models)")
+    cord = args.target in ("banc_cord", "mcns_cord")
+    if (args.source == "manc") != cord:
+        p.error("the nerve-cord targets go with --source manc, and only they")
     args.models = args.models or DEFAULT_MODELS[args.source]
     pair = (args.source, args.target)
     default = DEFAULT_OUT.get(pair, f"label_free_{args.source}_{args.target}")
