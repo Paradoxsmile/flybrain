@@ -53,6 +53,17 @@ Two files of the harmonized hemibrain, from the same public bucket (`compiled_da
 
 On first use, `flybrain/hemibrain.py` reduces them to the traced neurons and their connections with >= 5 synapses (`data/processed/hemibrain_*.parquet`). The evaluation protocol is fixed in [docs/hemibrain_protocol.md](../docs/hemibrain_protocol.md).
 
+## MANC (v1.2.1, optional, source of the nerve-cord test)
+
+Two files of the harmonized MANC (male adult nerve cord, Janelia FlyEM; CC BY 4.0), from the same public bucket (`compiled_data/manc_121/`), into `data/raw/manc/`:
+
+| File | Content | Size | MD5 (base64) |
+|---|---|---|---|
+| `manc_121_meta.feather` | per-neuron metadata (`cell_type`, `super_class`, `side`, `region`, ...) | 1.4 MB | `Yx8P7LnG+9+pqBcRJPc+NA==` |
+| `manc_121_simple_edgelist.feather` | `pre`, `post`, `count` (some rows repeated; `flybrain/manc.py` drops the copies) | 87 MB | `7ko0TfSZiZ1EGPF2O8OaMA==` |
+
+On first use, `flybrain/manc.py` caches `data/processed/manc_{neurons,connections}.parquet`. The nerve cords of BANC and MCNS are read from the BANC and MCNS files above and cached as `banc_cord_*.parquet` and `mcns_cord_*.parquet` (`flybrain/banc.py`, `flybrain/mcns.py`). The evaluation protocol is [docs/vnc_rare_protocol.md](../docs/vnc_rare_protocol.md).
+
 ## Processed cache
 
 On first use, `flybrain.loading` cleans the tables (dedupes neurons, sums synapses per pre/post pair, drops unknown ids) and writes `data/processed/neurons.parquet` and `data/processed/connections.parquet`. Delete that folder to rebuild after changing raw files.

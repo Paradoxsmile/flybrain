@@ -4,6 +4,7 @@ synthetic graphs with a hidden matching."""
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -184,3 +185,312 @@ def test_rare_types_and_candidates():
     stage1 = pd.DataFrame({"pred": ["B", "D", "C", "A"], "label": ["B", "C", None, "C"]})
     assert gmm.candidates(stage1, sizes, "gnn").tolist() == [0, 2]
     assert gmm.candidates(stage1, sizes, "oracle").tolist() == [0, 1, 3]
+
+
+def test_file_candidates_two_tier_and_degrade_args(tmp_path):
+    sizes = pd.Series({"A": 1, "B": 2, "C": 4, "D": 5, "E": 10, "F": 30})
+    stage1 = pd.DataFrame({"root_id": [11, 12, 13, 14], "pred": ["B", "E", "F", "D"]})
+    pd.DataFrame({"root_id": [14, 12]}).to_parquet(tmp_path / "candidates_x.parquet")
+    assert gmm.candidates(stage1, sizes, "file:x", tmp_path).tolist() == [1, 3]
+    assert gmm.cand_tag("file:x") == "x" and gmm.cand_tag("gnn") == "gnn"
+    # not assigned and the stage-1 type in the coarse label space (>= 10): coarse type
+    pred = np.array(["B", "E", "F", "C"], dtype=object)
+    assigned = np.array([False, False, False, True])
+    coarse = np.array(["E", "F", "E", "F"], dtype=object)
+    out = gmm.two_tier(pred, assigned, stage1.pred.to_numpy(), coarse, 10, sizes)
+    assert out.tolist() == ["B", "F", "E", "C"]
+    full = gmm.degrade_args({"target_retention": 1.0})
+    assert full == {
+        "retention": 1.0,
+        "retention_seed": 2,
+        "exclude_types": (),
+        "crop_fraction": 0.0,
+    }
+    thin = gmm.degrade_args({"target_retention": 0.35, "retention_seed": 3, "target_crop": None})
+    assert thin["retention"] == 0.35 and thin["retention_seed"] == 3 and thin["crop_fraction"] == 0
+
+
+def test_mass_selection_per_side():
+    cs = importlib.import_module("candidate_selection")
+    side = np.array(["left", "left", "left", "right", "right", ""], dtype=object)
+    score = np.array([0.9, 0.1, 0.5, 0.2, 0.8, 1.0])
+    none = np.zeros(6, bool)
+    k = {"left": 2, "right": 1}
+    assert np.nonzero(cs.top_by_side(score, side, k, none))[0].tolist() == [0, 2, 4]
+    base = np.array([False, True, False, False, False, True])  # kept; filled up to k per side
+    assert np.nonzero(cs.top_by_side(score, side, k, base))[0].tolist() == [0, 1, 4, 5]
+
+
+def test_size_threshold_run_names():
+    st = importlib.import_module("size_threshold")
+    assert st.label_free_dir("mcns", "consistency") == "label_free"
+    assert st.label_free_dir("banc", "size_agreement") == "label_free_banc_size_agreement"
+    assert st.label_free_dir("mcns", "size_agreement") == "label_free_mcns_size_agreement"
+    thin = {"retention": 0.35}
+    assert (
+        st.label_free_dir("mcns", "size_agreement", thin) == "label_free_mcns_r0.35_size_agreement"
+    )
+    other = {"retention": 0.25, "retention_seed": 3, "exclude": ("JO-A",)}
+    assert (
+        st.label_free_dir("mcns", "consistency", other)
+        == "label_free_mcns_r0.25_seed3_x_consistency"
+    )
+
+
+def test_lap_capacity():
+    rng = np.random.default_rng(0)
+    g = rng.random((6, 6))
+    rows, cols = gmm.lap_capacity(g, 1, 4)
+    ref = linear_sum_assignment(g, maximize=True)
+    assert g[rows, cols].sum() == pytest.approx(g[ref].sum())
+    g = np.zeros((4, 4))
+    g[0, :3] = 1.0  # three columns prefer row 0; with capacity 2 it takes two of them
+    rows, cols = gmm.lap_capacity(g, 2, 3)
+    assert sorted(cols) == [0, 1, 2, 3] and (rows == 0).sum() == 2
+
+
+def test_centered_gradient_matches_dense_centering():
+    f, m, f_blocks, m_blocks, _ = _two_brains((30, 25), seed=5)
+    F, M = gm.subgraph(f, *f_blocks, 30), gm.subgraph(m, *m_blocks, 30)
+    rng = np.random.default_rng(5)
+    P = [gm.sinkhorn(rng.random((30, 30))).astype(np.float32) for _ in range(2)]
+
+    def centered(a):
+        a = a.toarray().astype(np.float64)
+        return a - np.outer(a.sum(1), a.sum(0)) / a.sum()
+
+    Fc = {k: centered(v) for k, v in F.items()}
+    Mc = {k: centered(v) for k, v in M.items()}
+    ref = gmm.gradient(Fc, Mc, [p.astype(np.float64) for p in P])
+    got = gmm.centered_gradient(gmm.as32(F), gmm.as32(M), P)
+    for r, g in zip(ref, got, strict=True):
+        assert np.allclose(g, r, atol=1e-3 * np.abs(r).max())
+
+
+def test_absorb_reject():
+    gc = np.array([[2.0, -1.0, 0.5], [0.1, 0.3, -2.0], [0.0, 0.0, 0.0]])  # row 2: dummy
+    fm = np.array([0, 1, 2])  # candidate 2 sits on the dummy
+    absorbed, rejected, own = gmm.absorb_reject(gc, fm, 2)
+    assert absorbed.tolist() == [0, 1, 0]  # absorbed onto FAFB 0 (gain 0.5 > 0)
+    assert np.isnan(own[2]) and own[:2] == pytest.approx([2.0, 0.3])
+    gc[1, 1] = -0.3
+    absorbed, rejected, _ = gmm.absorb_reject(gc, fm, 2)
+    assert rejected.tolist() == [0, -1, 0]
+
+
+@pytest.mark.skipif(
+    not (ROOT / "data/processed/neurons.parquet").exists(), reason="needs the FAFB type sizes"
+)
+def test_match_end_to_end_with_absorb_and_capacity(tmp_path):
+    """match() on two synthetic brains labeled with real 2-4-neuron FAFB types: the matching
+    recovers the types, and the absorb / reject / capacity variants are reported."""
+    stratify = importlib.import_module("stratify")
+    types = stratify.fafb_types()
+    sizes = (40, 30)
+    rng = np.random.default_rng(1)
+    n = sum(sizes)
+    s_, d_, w = _edges(rng, n, 0.08)
+    sigmas = [rng.permutation(k) for k in sizes]
+    pos = np.concatenate([sigmas[0], sizes[0] + sigmas[1]])
+    order = rng.permutation(n)
+    node = np.concatenate([order[: sizes[0]], order[sizes[0] :]])[pos]
+    extra = 4  # isolated left candidates beyond FAFB's left neurons: they go to dummies
+    names = list(types.index[types["size"].between(2, 4)][:n])
+    fside = np.array(["left"] * sizes[0] + ["right"] * sizes[1], dtype=object)
+    fafb = _graph(s_, d_, w, n)
+    fafb.label_names, fafb.y = names, torch.arange(n)
+    fafb.side, fafb.node_ids = fside, torch.arange(1000, 1000 + n)
+    tgt = _graph(node[s_], node[d_], w, n + extra)
+    tside = np.empty(n + extra, dtype=object)
+    tside[node] = fside
+    tside[n:] = "left"
+    tlabel = np.empty(n + extra, dtype=object)
+    tlabel[node] = names
+    tgt.side, tgt.node_ids = tside, torch.arange(n + extra)
+    stage1 = pd.DataFrame(
+        {
+            "root_id": np.arange(n + extra),
+            "label": tlabel,
+            "pred": names[0],
+            "pred_selected": names[0],
+        }
+    )
+    s = SimpleNamespace(
+        sel={"chosen": {"variant": "raw"}},
+        fafb=fafb,
+        tgt=tgt,
+        stage1=stage1,
+        sizes=types["size"],
+        cand=np.arange(n + extra),
+        out=tmp_path,
+    )
+    args = SimpleNamespace(
+        candidates="gnn",
+        target="mcns",
+        fallback=[],
+        start="bary",
+        iters=30,
+        lam=0.0,
+        variant="raw",
+        capacity=2,
+        cap_iters=3,
+        stage1="synthetic",
+    )
+    gmm.match(s, args)
+    m = pd.read_csv(tmp_path / "metrics.csv")
+    acc = m[m.subset == "2-4 (MCNS label)"].set_index("method").acc
+    for method in ("gm_bary", "gm_bary_absorb", "gm_bary_absorb_reject", "gm_bary_cap2"):
+        assert method in acc.index
+    assert acc["gm_bary"] == 1.0 and acc["stage 1 (label-free GNN)"] < 0.1
+    out = pd.read_parquet(tmp_path / "matches_gnn_gm_bary.parquet")
+    assert (out.fafb_root_id[out.label.notna()] >= 1000).all()
+    assert (out.fafb_root_id[out.label.isna()] == -1).all()  # isolated: on dummies
+
+
+def test_union_candidates_equal_candidate_selection():
+    cs = importlib.import_module("candidate_selection")
+    sizes = pd.Series({"A": 1, "B": 2, "C": 4, "D": 5, "E": 10})
+    stage1 = pd.DataFrame(
+        {
+            "pred": ["B", "D", "C", "A", "E", "D"],
+            "pred_selected": ["D", "B", "C", "A", "B", "E"],
+            "side": ["left"] * 6,
+        }
+    )
+    union = gmm.candidates(stage1, sizes, "union")
+    assert union.tolist() == [0, 1, 2, 4]
+    m = stage1.assign(mass_2_4=0.0)
+    sets, _ = cs.candidate_sets(m, sizes, {"left": 0.5, "right": 0.5})
+    assert np.nonzero(sets["union"])[0].tolist() == union.tolist()
+
+
+def test_terms_follow_the_adjacency_keys():
+    f, _, f_blocks, _, _ = _two_brains((20, 20), seed=2)
+    two = gmm.block_adjacency(f, f_blocks, 20)
+    assert gmm.terms(two) == list(gmm.TERMS)  # the frozen two-block objective, same order
+    third = np.arange(5, 15)  # a passing block (overlapping indices are fine for the test)
+    three = gmm.block_adjacency(f, [np.arange(5), np.arange(20, 25), third], 20)
+    assert list(three) == ["LL", "RR", "LR", "RL", "PP", "LP", "PL", "RP", "PR"]
+    assert gmm.terms(three)[4:] == [("PP", 2, 2), ("LP", 0, 2), ("PL", 2, 0), ("RP", 1, 2),
+                                    ("PR", 2, 1)]  # fmt: skip
+    # PL[i, j] is the edge from passing neuron third[i] to left neuron j
+    dense = np.zeros((40, 40))
+    src, dst = f.edge_index.numpy()
+    dense[src, dst] = np.log1p(f.edge_weight.numpy())
+    np.testing.assert_allclose(three["PL"].toarray()[:10, :5], dense[np.ix_(third, np.arange(5))])
+
+
+def test_side_blocks():
+    idx = np.array([0, 1, 2, 3, 4, 5])
+    side = np.array(["left", "right", "left", "", "right", "center"], dtype=object)
+    passing = np.array([False, False, True, True, False, False])
+    b = gmm.side_blocks(idx, side, passing, False)
+    assert [x.tolist() for x in b] == [[0, 2], [1, 4]]
+    b = gmm.side_blocks(idx, side, passing, True)
+    assert [x.tolist() for x in b] == [[0], [1, 4], [2, 3]]  # passing: whatever the side
+    with pytest.raises(ValueError, match="passing"):
+        gmm.side_blocks(idx, side, None, True)
+
+
+def test_faq_blocks_recovers_a_three_block_matching():
+    """Left, right and a passing block, wired among all of them; the second brain reorders
+    the neurons within each block."""
+    sizes = (40, 35, 25)
+    rng = np.random.default_rng(5)
+    n = sum(sizes)
+    s, d, w = _edges(rng, n, 0.08)
+    starts = np.cumsum((0,) + sizes)
+    f_blocks = [np.arange(a, b) for a, b in zip(starts[:-1], starts[1:], strict=True)]
+    sigmas = [rng.permutation(k) for k in sizes]
+    order = rng.permutation(n)
+    m_blocks = [order[a:b] for a, b in zip(starts[:-1], starts[1:], strict=True)]
+    node = np.concatenate([mb[sg] for mb, sg in zip(m_blocks, sigmas, strict=True)])
+    f, m = _graph(s, d, w, n), _graph(node[s], node[d], w, n)
+    k = max(sizes)
+    F = gmm.as32(gmm.block_adjacency(f, f_blocks, k))
+    M = gmm.as32(gmm.block_adjacency(m, m_blocks, k))
+    bary = np.full((k, k), 1.0 / k, dtype=np.float32)
+    matches = gmm.faq_blocks(F, M, [bary, bary.copy(), bary.copy()], iters=30)
+    for match, sg, size in zip(matches, sigmas, sizes, strict=True):
+        assert (match[:size] == np.argsort(sg)).all()
+
+
+def test_match_end_to_end_manc_cord_with_passing_block(tmp_path):
+    """match() for a MANC -> BANC cord pair: union candidates, a passing block whose neurons
+    carry the wrong side in the target (as for ascending neurons), reference B and the
+    nerve-cord strata."""
+    sizes = (30, 30, 20)  # left, right, passing
+    rng = np.random.default_rng(3)
+    n = sum(sizes)
+    s_, d_, w = _edges(rng, n, 0.1)
+    starts = np.cumsum((0,) + sizes)
+    blocks = [np.arange(a, b) for a, b in zip(starts[:-1], starts[1:], strict=True)]
+    names = [f"T{i // 2}" for i in range(n)]  # 2-neuron source types
+    types = pd.DataFrame(
+        {"size": 2, "region": ["ascending" if i >= 25 else "intrinsic" for i in range(n // 2)]},
+        index=[f"T{i}" for i in range(n // 2)],
+    ).assign(size_bin="< 20")
+    fside = np.array(["left"] * 30 + ["right"] * 30 + ["left", "right"] * 10, dtype=object)
+    passing = np.zeros(n, bool)
+    passing[60:] = True
+    src = _graph(s_, d_, w, n)
+    src.label_names, src.y = (
+        sorted(set(names)),
+        torch.tensor([sorted(set(names)).index(x) for x in names]),
+    )
+    src.side, src.passing, src.node_ids = fside, passing, torch.arange(1000, 1000 + n)
+    sigmas = [rng.permutation(len(b)) for b in blocks]
+    order = rng.permutation(n)
+    m_blocks = [order[b] for b in blocks]
+    node = np.concatenate([mb[sg] for mb, sg in zip(m_blocks, sigmas, strict=True)])
+    tgt = _graph(node[s_], node[d_], w, n)
+    tside = np.empty(n, dtype=object)
+    tside[node] = fside
+    tside[node[60:]] = np.where(fside[60:] == "left", "right", "left")  # passing: other side
+    tpass = np.zeros(n, bool)
+    tpass[node[60:]] = True
+    tlabel = np.empty(n, dtype=object)
+    tlabel[node] = names
+    tgt.side, tgt.passing, tgt.node_ids = tside, tpass, torch.arange(n)
+    tgt.label_names, tgt.alt_type = src.label_names, tlabel.astype(str)
+    stage1 = pd.DataFrame(
+        {"root_id": np.arange(n), "label": tlabel, "pred": "T0", "pred_selected": "T1"}
+    )
+    s = SimpleNamespace(
+        sel={"chosen": {"variant": "raw"}},
+        fafb=src,
+        tgt=tgt,
+        stage1=stage1,
+        sizes=types["size"],
+        types=types,
+        cand=gmm.candidates(stage1, types["size"], "union"),
+        out=tmp_path,
+    )
+    args = SimpleNamespace(
+        candidates="union",
+        target="banc_cord",
+        source="manc",
+        passing_block=True,
+        fallback=[],
+        start="bary",
+        iters=30,
+        lam=0.0,
+        variant="raw",
+        capacity=1,
+        stage1="synthetic",
+    )
+    gmm.match(s, args)
+    m = pd.read_csv(tmp_path / "metrics.csv")
+    acc = m.set_index(["method", "subset"]).acc
+    assert acc[("gm_bary_pass", "2-4 (ref A)")] == 1.0
+    assert acc[("gm_bary_pass", "2-4 (ref B)")] == 1.0
+    assert acc[("gm_bary_pass", "2-4 (ref A), passing")] == 1.0
+    assert ("gm_bary_pass", "2-4 (ref A), ascending") in acc.index
+    assert ("gm_bary_pass", "5-9") in acc.index
+    info = json.loads((tmp_path / "info_union_gm_bary_pass.json").read_text())
+    assert info["blocks"] == ["left", "right", "passing"] and info["source_rare"] == [30, 30, 20]
+    # without the passing block the swapped sides cost the passing neurons
+    args.passing_block = False
+    gmm.match(s, args)
+    acc = pd.read_csv(tmp_path / "metrics.csv").set_index(["method", "subset"]).acc
+    assert acc[("gm_bary", "2-4 (ref A), passing")] < 0.5

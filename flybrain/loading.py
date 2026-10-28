@@ -32,6 +32,8 @@ POST_COL = "post_root_id"
 WEIGHT_COL = "syn_count"
 CELL_TYPE_SRC_COL = "primary_type"  # column in the cell-types table, merged in as "cell_type"
 LABEL_COLS = ("super_class", "cell_type")
+# FAFB super classes of the neurons that pass through the neck (graph attribute `passing`)
+BRAIN_PASSING = ("ascending", "descending", "sensory_ascending", "sensory_descending")
 MIN_COUNT = 5  # Codex threshold of the FAFB connections
 
 
@@ -140,8 +142,10 @@ def build_graph(
 
     Attributes: x (degree features), edge_index, edge_weight, y, node_ids, label_names, and
     side (array of "left" / "right" / "center" / "", if the neurons table has a side column);
-    flywire_types (MCNS), region and morph_type (BANC), cropped (hemibrain) likewise, as string
-    arrays.
+    flywire_types (MCNS), region and morph_type (BANC), cropped (hemibrain), alt_type (BANC
+    cord) and manc_types (MCNS cord) likewise, as string arrays; passing (the neurons that pass
+    through the neck: the table's `passing` column, else super_class in BRAIN_PASSING) as a
+    boolean array.
     """
     neurons, connections = clean_tables(neurons, connections)
     index = pd.Series(np.arange(len(neurons)), index=neurons[ID_COL])
@@ -161,7 +165,19 @@ def build_graph(
     )
     data.node_ids = torch.from_numpy(neurons[ID_COL].to_numpy().copy())
     data.label_names = names
-    for col in ("side", "flywire_types", "region", "morph_type", "cropped"):
+    if "passing" in neurons.columns:
+        data.passing = neurons["passing"].astype(bool).to_numpy(copy=True)
+    elif "super_class" in neurons.columns:  # brain graphs (FAFB super classes)
+        data.passing = neurons["super_class"].isin(BRAIN_PASSING).to_numpy()
+    for col in (
+        "side",
+        "flywire_types",
+        "region",
+        "morph_type",
+        "cropped",
+        "alt_type",
+        "manc_types",
+    ):
         if col in neurons.columns:
             setattr(data, col, neurons[col].astype("string").fillna("").to_numpy(dtype=str))
     return data
@@ -210,6 +226,49 @@ def degrade_tables(
     return neurons, connections
 
 
+def drop_passing_pairs(neurons: pd.DataFrame, connections: pd.DataFrame) -> pd.DataFrame:
+    """The connections without those between two passing neurons (neurons["passing"]; all of
+    them if the table has no such column). In a brain-and-cord connectome a connection between
+    two neurons that pass through the neck can lie in the brain, which a cord-only source (MANC)
+    lacks, so the nerve-cord graphs drop them all (docs/vnc_rare_protocol.md)."""
+    if "passing" not in neurons.columns:
+        return connections
+    ids = neurons[ID_COL].to_numpy()[neurons["passing"].to_numpy(dtype=bool)]
+    both = connections[PRE_COL].isin(ids).to_numpy() & connections[POST_COL].isin(ids).to_numpy()
+    return connections[~both]
+
+
+def drop_self_connections(connections: pd.DataFrame) -> pd.DataFrame:
+    """The connections without those from a neuron onto itself. MANC, the nerve-cord source,
+    has none, so the nerve-cord graphs drop them all (docs/vnc_rare_protocol.md, decision 5)."""
+    return connections[connections[PRE_COL].to_numpy() != connections[POST_COL].to_numpy()]
+
+
+SOURCES = ("fafb", "manc")  # datasets whose label space other graphs can be coded in
+CORD_DATASETS = ("manc", "banc_cord", "mcns_cord")
+SYNTHETIC_OFFSETS = {
+    "fafb": 0,
+    "mcns": 1000,
+    "banc": 2000,
+    "hemibrain": 3000,
+    "manc": 4000,
+    "banc_cord": 5000,
+    "mcns_cord": 6000,
+}
+
+
+def _synthetic(dataset: str, seed: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Synthetic tables standing in for a dataset; for the nerve-cord datasets the neurons of
+    class_0 are passing neurons, and connections between two of them are dropped."""
+    from flybrain.synthetic import make_synthetic_tables
+
+    neurons, connections = make_synthetic_tables(seed=seed + SYNTHETIC_OFFSETS[dataset])
+    if dataset in CORD_DATASETS:
+        neurons = neurons.assign(passing=(neurons["super_class"] == "class_0").to_numpy())
+        connections = drop_passing_pairs(neurons, connections)
+    return neurons, connections
+
+
 def load_graph(
     label_col: str = "super_class",
     raw_dir: Path = RAW_DIR,
@@ -226,6 +285,10 @@ def load_graph(
     exclude_types: tuple = (),
     exclude_super_classes: tuple = (),
     crop_fraction: float = 0.0,
+    source: str = "fafb",
+    manc_variant: str = "raw",
+    banc_cord_variant: str = "raw",
+    mcns_cord_variant: str = "raw",
 ) -> Data:
     """Load the real graph (raw -> Parquet cache -> Data), or a synthetic one if requested.
 
@@ -236,13 +299,20 @@ def load_graph(
     (flybrain.hemibrain, `hemibrain_variant`). With synthetic=True, other synthetic graphs
     stand in for them.
 
+    source="manc" codes the labels in MANC's label space instead (the nerve-cord test,
+    docs/vnc_rare_protocol.md), for dataset="manc" (flybrain.manc), "banc_cord" and
+    "mcns_cord" (the nerve cords of BANC and MCNS, flybrain.banc / flybrain.mcns, preprocessing
+    `banc_cord_variant` / `mcns_cord_variant`). The nerve-cord graphs have no connections
+    between two passing neurons (drop_passing_pairs).
+
     retention < 1, exclude_types, exclude_super_classes or crop_fraction give a less complete
     copy (degrade_tables; for MCNS and BANC before the variant's threshold), labeled in the
-    label space of the full FAFB graph.
+    label space of the full source graph.
     """
-    offsets = {"fafb": 0, "mcns": 1000, "banc": 2000, "hemibrain": 3000}  # synthetic
-    if dataset not in offsets:
-        raise ValueError(f"dataset must be one of {sorted(offsets)}, got {dataset!r}")
+    if dataset not in SYNTHETIC_OFFSETS:
+        raise ValueError(f"dataset must be one of {sorted(SYNTHETIC_OFFSETS)}, got {dataset!r}")
+    if source not in SOURCES:
+        raise ValueError(f"source must be one of {SOURCES}, got {source!r}")
     degrade = {
         "retention": retention,
         "seed": retention_seed,
@@ -253,21 +323,48 @@ def load_graph(
     full = retention == 1.0 and not exclude_types and not exclude_super_classes
     full = full and crop_fraction == 0.0
     if synthetic:
-        from flybrain.synthetic import make_synthetic_tables
-
-        fafb = make_synthetic_tables(seed=seed)
-        if dataset == "fafb" and full:
-            return build_graph(*fafb, label_col, min_class_size)
-        names = encode_labels(fafb[0][label_col], min_class_size)[1]
-        other = fafb if dataset == "fafb" else make_synthetic_tables(seed=seed + offsets[dataset])
+        src = _synthetic(source, seed)
+        if dataset == source and full:
+            return build_graph(*src, label_col, min_class_size)
+        names = encode_labels(src[0][label_col], min_class_size)[1]
+        other = src if dataset == source else _synthetic(dataset, seed)
         other = degrade_tables(*other, **degrade)
         return build_graph(*other, label_col, 1, names)
-    fafb_neurons, connections = load_tables(raw_dir, processed_dir)
-    if dataset == "fafb" and full:
-        return build_graph(fafb_neurons, connections, label_col, min_class_size)
-    names = encode_labels(fafb_neurons[label_col], min_class_size)[1]
+    if source == "fafb":
+        src_neurons, src_connections = load_tables(raw_dir, processed_dir)
+    else:
+        from flybrain.manc import load_manc_tables
+
+        src_neurons, src_connections = load_manc_tables(
+            manc_variant, raw_dir / "manc", processed_dir
+        )
+    if dataset == source and full:
+        return build_graph(src_neurons, src_connections, label_col, min_class_size)
+    names = encode_labels(src_neurons[label_col], min_class_size)[1]
     if dataset == "fafb":
-        neurons, connections = degrade_tables(fafb_neurons, connections, **degrade)
+        if source == "fafb":
+            neurons, connections = src_neurons, src_connections
+        else:
+            neurons, connections = load_tables(raw_dir, processed_dir)
+        neurons, connections = degrade_tables(neurons, connections, **degrade)
+    elif dataset == "manc":
+        from flybrain.manc import load_manc_tables
+
+        neurons, connections = load_manc_tables(
+            manc_variant, raw_dir / "manc", processed_dir, None if full else degrade
+        )
+    elif dataset == "banc_cord":
+        from flybrain.banc import load_banc_cord_tables
+
+        neurons, connections = load_banc_cord_tables(
+            banc_cord_variant, raw_dir / "banc", processed_dir, None if full else degrade
+        )
+    elif dataset == "mcns_cord":
+        from flybrain.mcns import load_mcns_cord_tables
+
+        neurons, connections = load_mcns_cord_tables(
+            mcns_cord_variant, raw_dir / "mcns", processed_dir, None if full else degrade
+        )
     elif dataset == "mcns":
         from flybrain.mcns import load_mcns_tables
 

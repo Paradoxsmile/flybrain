@@ -50,6 +50,34 @@ the candidates are the labeled reference-A neurons of 2-4-neuron types.
 soft probabilities (one dense N x K float32 matrix, ~5 GB, at a time). --stage match runs one
 matching and appends to metrics.csv.
 
+Candidate selection (docs/candidate_selection_plan.md):
+- the stage-1 run may be on a degraded target (label_free.py --target-retention etc., recorded
+  in its selected.json); the matching then loads the same degraded copy;
+- --candidates file:<name>: a set from candidate_selection.py --stage select;
+- --fallback <coarse runs>: every labeling is also reported two-tier, the neurons the matching
+  does not assign a FAFB neuron taking the coarse model's type where their stage-1 type is in
+  its label space (two_tier);
+- every matching is also reported after absorb (candidates on dummies go many-to-one to the
+  FAFB neuron of highest positive centered gain) and absorb + reject (matched candidates with
+  centered gain <= 0 unassigned): methods <method>_absorb, <method>_absorb_reject;
+- --capacity c: Frank-Wolfe from the one-to-one matching over the matchings in which each FAFB
+  neuron takes up to c candidates (lap_capacity), method <method>_cap<c>.
+matches_*.parquet also hold the assigned FAFB root id (fafb_root_id, -1: none) and the centered
+gain of each matched candidate.
+
+Nerve-cord test (docs/vnc_rare_protocol.md): --source manc --target banc_cord | mcns_cord runs
+the same two stages from MANC (stage 1 under results/size_threshold_manc/m2, sizes and strata
+from stratify.source_types("manc")), scored against reference A (the stage-1 `label`), for
+banc_cord also against reference B (alt_type, BANC's curated type), with the 2-4 stratum also by
+MANC super-class group of the true type and by passing / not passing. Further options:
+- --candidates union: the target neurons whose stage-1 type after NTAC (pred) or prior-matched
+  type before NTAC (pred_selected) is a 2-4-neuron source type, from predictions.parquet alone
+  (label-free; candidate_selection.py's `union`);
+- --passing-block: the neurons that pass through the neck (graph attribute `passing`) form a
+  third block, whatever their side, in the source and the target; the objective sums over all
+  ordered pairs of the three blocks (with two blocks: exactly the four terms above). Method
+  names get the suffix _pass.
+
 Writes results/graph_matching_<target>/{soft_<candidates>.npz, metrics.csv, info_*.json,
 matches_*.parquet} (or results/<--out>/).
 
@@ -65,12 +93,14 @@ import argparse
 import json
 import sys
 import time
+from functools import partial
 from types import SimpleNamespace
 
 import label_free
 import lean_label_free
 import numpy as np
 import pandas as pd
+import scipy.sparse as sp
 import stratify
 import torch
 from graph_matching import sinkhorn, subgraph
@@ -80,21 +110,90 @@ from scipy.sparse.linalg import svds
 from flybrain.loading import load_graph
 from flybrain.utils import REPO_ROOT
 
-STAGE1_ROOT = REPO_ROOT / "results" / "size_threshold" / "m2"
+STAGE1_ROOTS = {  # stage-1 runs (size_threshold.py) by source
+    "fafb": REPO_ROOT / "results" / "size_threshold" / "m2",
+    "manc": REPO_ROOT / "results" / "size_threshold_manc" / "m2",
+}
+STAGE1_ROOT = STAGE1_ROOTS["fafb"]
 STAGE1 = {"mcns": "label_free", "banc": "label_free_banc_size_agreement"}  # default stage-1 runs
-REFERENCE = {"mcns": "MCNS label", "banc": "ref A"}  # the stage-1 `label`, in metrics.csv
+STAGE1_MANC = {  # nerve-cord test, source MANC
+    "banc_cord": "label_free_banc_cord_size_agreement",
+    "mcns_cord": "label_free_mcns_cord_size_agreement",
+}
+# the stage-1 `label`, in metrics.csv
+REFERENCE = {"mcns": "MCNS label", "banc": "ref A", "banc_cord": "ref A", "mcns_cord": "ref A"}
 MODELS = "size_threshold/m2/models"
+MODELS_BY_SOURCE = {"fafb": MODELS, "manc": "size_threshold_manc/m2/models"}
 MIN_SIZE, MAX_SIZE = 2, 4
 SIDES = ("left", "right")
-# <F[key], P_a M[key] P_c^T>: (key, a, c), blocks 0 = left, 1 = right
+# <F[key], P_a M[key] P_c^T>: (key, a, c), blocks 0 = left, 1 = right (2 = passing, see terms)
 TERMS = (("LL", 0, 0), ("RR", 1, 1), ("LR", 0, 1), ("RL", 1, 0))
+BLOCK_INDEX = {"L": 0, "R": 1, "P": 2}
+BLOCK_NAMES = ("left", "right", "passing")
+# with a passing block: the 5 further ordered pairs, after the 4 of TERMS
+PASSING_KEYS = ("PP", "LP", "PL", "RP", "PR")
 
 
-def graphs(target: str, variant: str):
-    fafb = load_graph("cell_type", min_class_size=MIN_SIZE)
-    variant_arg = {f"{target}_variant": variant}
-    tgt = load_graph("cell_type", min_class_size=MIN_SIZE, dataset=target, **variant_arg)
-    return fafb, tgt
+def degrade_args(sel: dict) -> dict:
+    """load_graph arguments for the (possibly degraded) target of a stage-1 run's selected.json
+    (label_free.py --target-retention / --retention-seed / --target-exclude / --target-crop)."""
+    assert sel.get("target_coverage") is None, "coverage exclusions are not supported here"
+    return {
+        "retention": sel.get("target_retention", 1.0),
+        "retention_seed": sel.get("retention_seed", 2),  # label_free.py's default
+        "exclude_types": tuple(sel.get("target_exclude") or ()),
+        "crop_fraction": sel.get("target_crop") or 0.0,
+    }
+
+
+def graphs(target: str, variant: str, degrade: dict | None = None, source: str = "fafb"):
+    """The source graph (FAFB or MANC) and the target, labels coded in the source's label space
+    of minimum type size 2."""
+    src = load_graph("cell_type", min_class_size=MIN_SIZE, dataset=source, source=source)
+    extra = {f"{target}_variant": variant, **(degrade or {})}
+    tgt = load_graph("cell_type", min_class_size=MIN_SIZE, dataset=target, source=source, **extra)
+    return src, tgt
+
+
+def terms(F: dict) -> list:
+    """(key, a, c) for each block pair of an adjacency dict: the first letter of the key is
+    the block of the presynaptic neuron (L, R, P), the second that of the postsynaptic one. For
+    the two-block dicts of graph_matching.subgraph this is TERMS, in the same order."""
+    return [(k, BLOCK_INDEX[k[0]], BLOCK_INDEX[k[1]]) for k in F]
+
+
+def block_adjacency(data, blocks: list, n: int) -> dict:
+    """graph_matching.subgraph for two blocks (left, right); with a third (passing) block, the
+    log1p(synapse) adjacencies of all 9 ordered block pairs, padded to n x n (keys LL, RR, LR,
+    RL, then PASSING_KEYS)."""
+    if len(blocks) == 2:
+        return subgraph(data, *blocks, n)
+    src, dst = data.edge_index.numpy()
+    w = np.log1p(data.edge_weight.numpy().astype(np.float64))
+    pos = []
+    for b in blocks:
+        p = np.full(data.num_nodes, -1)
+        p[b] = np.arange(len(b))
+        pos.append(p)
+    out = {}
+    for key in ("LL", "RR", "LR", "RL", *PASSING_KEYS):
+        a, b = pos[BLOCK_INDEX[key[0]]][src], pos[BLOCK_INDEX[key[1]]][dst]
+        keep = (a >= 0) & (b >= 0)
+        out[key] = sp.csr_matrix((w[keep], (a[keep], b[keep])), shape=(n, n))
+    return out
+
+
+def side_blocks(idx: np.ndarray, side, passing, pooled: bool) -> list:
+    """The neurons idx split into matching blocks: by side (left, right), and with pooled the
+    passing neurons, whatever their side, as a third block. Neurons of no block (non-passing
+    without a left/right side) are not matched."""
+    side = np.asarray(side)
+    if not pooled:
+        return [idx[side[idx] == s] for s in SIDES]
+    if passing is None:
+        raise ValueError("--passing-block needs graphs with a `passing` attribute")
+    p = np.asarray(passing, dtype=bool)[idx]
+    return [idx[(side[idx] == s) & ~p] for s in SIDES] + [idx[p]]
 
 
 def labels(data) -> np.ndarray:
@@ -108,32 +207,100 @@ def rare(type_names, sizes: pd.Series) -> np.ndarray:
     return (s >= MIN_SIZE) & (s <= MAX_SIZE)
 
 
-def morph_labels(tgt) -> np.ndarray:
-    """Reference B (BANC): the morphology-matched FAFB type where it is in the label space."""
-    morph = pd.Series(tgt.morph_type, dtype=object)
+def morph_labels(tgt, attr: str = "morph_type") -> np.ndarray:
+    """Reference B: the morphology-matched FAFB type (BANC) or, with attr="alt_type", BANC's
+    curated type (BANC cord), where it is in the label space."""
+    morph = pd.Series(getattr(tgt, attr), dtype=object)
     return morph.where(morph.isin(set(tgt.label_names))).to_numpy(dtype=object)
 
 
-def candidates(stage1: pd.DataFrame, sizes: pd.Series, kind: str) -> np.ndarray:
-    """Indices into the target: predicted (gnn) or labeled (oracle) as a 2-4-neuron FAFB type."""
+def candidates(stage1: pd.DataFrame, sizes: pd.Series, kind: str, directory=None) -> np.ndarray:
+    """Indices into the target: predicted (gnn) or labeled (oracle) as a 2-4-neuron FAFB type,
+    or (file:<name>) the root ids in <directory>/candidates_<name>.parquet
+    (candidate_selection.py --stage select)."""
     if kind == "gnn":
         return np.nonzero(rare(stage1.pred, sizes))[0]
-    return np.nonzero(stage1.label.notna().to_numpy() & rare(stage1.label, sizes))[0]
+    if kind == "oracle":
+        return np.nonzero(stage1.label.notna().to_numpy() & rare(stage1.label, sizes))[0]
+    if kind == "union":
+        return np.nonzero(rare(stage1.pred, sizes) | rare(stage1.pred_selected, sizes))[0]
+    ids = pd.read_parquet(directory / f"candidates_{cand_tag(kind)}.parquet").root_id
+    return np.sort(pd.Series(np.arange(len(stage1)), index=stage1.root_id).loc[ids].to_numpy())
+
+
+def cand_tag(kind: str) -> str:
+    """The candidate set's name in file names and metrics.csv (file:<name> -> <name>)."""
+    return kind.removeprefix("file:")
+
+
+def two_tier(pred, assigned, stage1, coarse, gate: int, sizes: pd.Series) -> np.ndarray:
+    """Idea 2 of docs/candidate_selection_plan.md: every neuron not assigned a FAFB neuron by
+    the matching takes the coarse labeling's type where its stage-1 type has >= gate FAFB
+    neurons (the coarse model's label space), and keeps pred otherwise."""
+    out = np.asarray(pred, dtype=object).copy()
+    s = pd.Series(stage1).map(sizes).fillna(0).to_numpy()
+    k = ~assigned & (s >= gate)
+    out[k] = np.asarray(coarse, dtype=object)[k]
+    return out
+
+
+def load_fallback(run: str, root_ids: np.ndarray, sizes: pd.Series) -> tuple[np.ndarray, int]:
+    """A coarse stage-1 labeling (results/<run>/cell_type/predictions.parquet, all target
+    neurons in the same order) and its gate: the smallest FAFB type size it predicts."""
+    c = pd.read_parquet(REPO_ROOT / "results" / run / "cell_type" / "predictions.parquet")
+    assert (c.root_id.to_numpy() == root_ids).all(), f"{run}: other neurons or order"
+    pred = c.pred.to_numpy(dtype=object)
+    return pred, int(sizes.loc[pd.unique(pred)].min())
+
+
+def score_rows(pred, references: list, regions: list, sizes: pd.Series, types, matched) -> list:
+    """Per reference: the 2-4 stratum, its matched part and all labeled neurons; for the first
+    reference also the 2-4 stratum by region and the size bins 5-19 and >= 20."""
+    rows, subsets = [], []
+    for i, (name, lab) in enumerate(references):
+        r = pd.notna(lab) & rare(lab, sizes)
+        suffix = "" if i == 0 else f" ({name})"  # the first reference's names as for MCNS
+        subsets += [
+            (name, lab, f"2-4 ({name})", r),
+            (name, lab, "2-4, matched candidates" + suffix, r & matched),
+            (name, lab, "all labeled" + suffix, np.ones(len(lab), bool)),
+        ]
+    name, lab = references[0]
+    in_rare = pd.notna(lab) & rare(lab, sizes)
+    subsets += [(name, lab, f"2-4 ({name}), {region}", in_rare & k) for region, k in regions]
+    s = pd.Series(lab).map(sizes).fillna(0).to_numpy()
+    subsets += [(name, lab, "5-19", (s >= 5) & (s <= 19)), (name, lab, ">= 20", s >= 20)]
+    subsets += [
+        (name, lab, "5-9", (s >= 5) & (s <= 9)),
+        (name, lab, "10-19", (s >= 10) & (s <= 19)),
+    ]
+    for name, lab, subset, k in subsets:
+        rows.append({"reference": name, "subset": subset, **score(lab, pred, k, types)})
+    return rows
 
 
 def setup(args):
     """Graphs, stage-1 labeling and the candidates (indices into the target)."""
-    d = STAGE1_ROOT / args.stage1 / "cell_type"
+    source = getattr(args, "source", "fafb")
+    d = STAGE1_ROOTS[source] / args.stage1 / "cell_type"
     sel = json.loads((d / "selected.json").read_text())
-    assert sel["target"] == args.target
+    assert sel["target"] == args.target and sel.get("source", "fafb") == source
     args.variant = args.variant or sel["chosen"]["variant"]
-    fafb, tgt = graphs(args.target, args.variant)
+    fafb, tgt = graphs(args.target, args.variant, degrade_args(sel), source)  # fafb: the source
     stage1 = pd.read_parquet(d / "predictions.parquet")
     assert (stage1.root_id.to_numpy() == tgt.node_ids.numpy()).all()
-    sizes = stratify.fafb_types()["size"]
-    cand = candidates(stage1, sizes, args.candidates)
+    types = stratify.source_types(source)
+    sizes = types["size"]
+    cand = candidates(stage1, sizes, args.candidates, d)
     return SimpleNamespace(
-        sel=sel, fafb=fafb, tgt=tgt, stage1=stage1, sizes=sizes, cand=cand, out=args.out_dir
+        sel=sel,
+        fafb=fafb,
+        tgt=tgt,
+        stage1=stage1,
+        sizes=sizes,
+        types=types,
+        cand=cand,
+        out=args.out_dir,
     )
 
 
@@ -144,7 +311,7 @@ def soft_probabilities(s) -> None:
     label_free.LABELS["cell_type"] = MIN_SIZE
     chosen = s.sel["chosen"]
     ns = argparse.Namespace(prior=s.sel["prior"], max_weight=s.sel["max_weight"])
-    paths = label_free.model_paths(MODELS, "cell_type")
+    paths = label_free.model_paths(MODELS_BY_SOURCE[s.sel.get("source", "fafb")], "cell_type")
     t = time.time()
     probs, weights, _ = lean_label_free.seed_outputs(paths, s.fafb, s.tgt, chosen["norm"], ns, {})
     print(f"prior matching: {time.time() - t:.0f} s", flush=True)
@@ -180,7 +347,7 @@ def as32(adj: dict) -> dict:
 def gradient(F: dict, M: dict, P: list) -> list:
     """d/dP_a of sum over TERMS of <F[k], P_a M[k] P_c^T>: F[k] P_c M[k]^T and F[k]^T P_a M[k]."""
     G = [np.zeros_like(p) for p in P]
-    for k, a, c in TERMS:
+    for k, a, c in terms(F):
         G[a] += F[k] @ (M[k] @ P[c].T).T
         G[c] += F[k].T @ (M[k].T @ P[a].T).T
     return G
@@ -188,7 +355,7 @@ def gradient(F: dict, M: dict, P: list) -> list:
 
 def bilinear(F: dict, M: dict, D: list, E: list) -> float:
     """sum over TERMS of <F[k], D_a M[k] E_c^T> = <F[k] E_c, D_a M[k]>."""
-    return float(sum(((F[k] @ E[c]) * (M[k].T @ D[a].T).T).sum() for k, a, c in TERMS))
+    return float(sum(((F[k] @ E[c]) * (M[k].T @ D[a].T).T).sum() for k, a, c in terms(F)))
 
 
 def rank1_assignment(g: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -206,11 +373,19 @@ def rank1_assignment(g: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def faq_blocks(
-    F: dict, M: dict, P0: list, iters: int, S: list | None = None, tol: float = 1e-4
+    F: dict,
+    M: dict,
+    P0: list,
+    iters: int,
+    S: list | None = None,
+    tol: float = 1e-4,
+    lmos: list | None = None,
 ) -> list:
     """graph_matching.faq for a block-diagonal P (one block per hemisphere), maximizing
     f(P) + sum_a <S_a, P_a> if a linear term S is given. From the barycenter, the first
-    direction is rank1_assignment's. Returns per block match[m] = FAFB index of MCNS index m."""
+    direction is rank1_assignment's. lmos (one per block) replace the assignment step and the
+    final projection, e.g. lap_capacity for a many-to-one matching. Returns per block
+    match[m] = FAFB index of MCNS index m."""
     P = [p.astype(np.float32) for p in P0]
     flat = all(np.ptp(p) == 0 for p in P)
     for it in range(iters):
@@ -220,8 +395,11 @@ def faq_blocks(
             for g, s in zip(G, S, strict=True):
                 g += s
         D = []
-        for g, p in zip(G, P, strict=True):
-            lmo = rank1_assignment if it == 0 and flat else _lap
+        for b, (g, p) in enumerate(zip(G, P, strict=True)):
+            if lmos is not None:
+                lmo = lmos[b]
+            else:
+                lmo = rank1_assignment if it == 0 and flat else _lap
             rows, cols = lmo(g)
             d = -p
             d[rows, cols] += 1.0
@@ -240,11 +418,87 @@ def faq_blocks(
         print(f"    iter {it}: step {a:.3f}, <G, D> {c1:.1f}, {time.time() - t:.0f} s", flush=True)
         if step < tol:
             break
-    return [project(p) for p in P]
+    if lmos is None:
+        return [project(p) for p in P]
+    out = []
+    for p, lmo in zip(P, lmos, strict=True):
+        rows, cols = lmo(p)
+        match = np.empty(p.shape[1], dtype=int)
+        match[cols] = rows
+        out.append(match)
+    return out
 
 
 def _lap(g: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return linear_sum_assignment(g, maximize=True)
+
+
+def lap_capacity(g: np.ndarray, c: int, r: int) -> tuple[np.ndarray, np.ndarray]:
+    """Assignment maximizing <g, Q> with every column assigned once, each of the first r rows
+    (real FAFB neurons) up to c times and each other row (padding) once: the linear step over
+    {Q >= 0: column sums 1, row sums <= c (real) / 1 (padding)}, solved as a rectangular
+    assignment with the real rows repeated c times. Returns (rows, cols) like _lap."""
+    rep = np.concatenate([np.repeat(np.arange(r), c), np.arange(r, g.shape[0])])
+    ri, ci = linear_sum_assignment(g[rep], maximize=True)
+    return rep[ri], ci
+
+
+def permutations(matches: list, n: int) -> list:
+    """Dense assignment matrices P[f, m] = 1 for match[m] = f (n x n float32 per block)."""
+    P = []
+    for match in matches:
+        p = np.zeros((n, n), dtype=np.float32)
+        p[match, np.arange(n)] = 1.0
+        P.append(p)
+    return P
+
+
+def centered_gradient(F: dict, M: dict, P: list) -> list:
+    """gradient() for F and M centered on a degree-preserving null, F~ = F - k_out k_in^T / W
+    per term (likewise M), without forming the dense centered matrices: at a matching, entry
+    [f, m] is the gain of also putting candidate m on FAFB neuron f, against chance."""
+
+    def outer(a, b):  # float32, so each temporary is one n x n float32 matrix
+        return np.outer(np.asarray(a, np.float32), np.asarray(b, np.float32))
+
+    G = gradient(F, M, P)
+    for k, a, c in terms(F):
+        f, m = F[k], M[k]
+        W, V = float(f.sum()), float(m.sum())
+        if W == 0 or V == 0:
+            continue
+        u, v = np.asarray(f.sum(axis=1)).ravel(), np.asarray(f.sum(axis=0)).ravel()
+        x, y = np.asarray(m.sum(axis=1)).ravel(), np.asarray(m.sum(axis=0)).ravel()
+        # F~ P_c M~^T = F P_c M^T - (F P_c y) x^T / V - u (M P_c^T v)^T / W + u x^T v.P_c y / WV
+        G[a] -= outer(f @ (P[c] @ y), x / V)
+        G[a] -= outer(u / W, m @ (P[c].T @ v))
+        G[a] += outer(u, x * (v @ (P[c] @ y) / (W * V)))
+        # F~^T P_a M~ = F^T P_a M - (F^T P_a x) y^T / V - v (M^T P_a^T u)^T / W + v y^T u.P_a x / WV
+        G[c] -= outer(f.T @ (P[a] @ x), y / V)
+        G[c] -= outer(v / W, m.T @ (P[a].T @ u))
+        G[c] += outer(v, y * (u @ (P[a] @ x) / (W * V)))
+    return G
+
+
+def absorb_reject(gc: np.ndarray, fm: np.ndarray, r: int) -> tuple:
+    """Idea 3a. fm: FAFB index of each real candidate (>= r: on a dummy); gc: centered gains
+    at the matching (centered_gradient). Absorb: a candidate on a dummy goes to the FAFB neuron
+    of highest centered gain if that gain is > 0 (many-to-one). Reject: a matched candidate
+    whose own centered gain is <= 0 is unassigned. Returns the assignments after absorb and
+    after absorb + reject (FAFB index or -1) and the own gains (nan on dummies)."""
+    assign = np.where(fm < r, fm, -1)
+    real = assign >= 0
+    own = np.full(len(fm), np.nan, dtype=np.float32)
+    own[real] = gc[assign[real], np.nonzero(real)[0]]
+    absorbed = assign.copy()
+    dummy = np.nonzero(~real)[0]
+    if len(dummy) and r > 0:
+        best = gc[:r, dummy].argmax(axis=0)
+        ok = gc[best, dummy] > 0
+        absorbed[dummy[ok]] = best[ok]
+    rejected = absorbed.copy()
+    rejected[real & ~(own > 0)] = -1
+    return absorbed, rejected, own
 
 
 def project(p: np.ndarray) -> np.ndarray:
@@ -283,27 +537,28 @@ def score(truth: np.ndarray, pred: np.ndarray, subset: np.ndarray, types) -> dic
 
 
 def match(s, args) -> None:
-    flabel = labels(s.fafb)
-    fside = np.asarray(s.fafb.side)
-    mside = np.asarray(s.tgt.side)
+    flabel = labels(s.fafb)  # s.fafb: the source graph (FAFB or MANC)
+    pooled = getattr(args, "passing_block", False)
     frare = rare(flabel, s.sizes)
-    f_blocks = [np.nonzero(frare & (fside == side))[0] for side in SIDES]
-    m_blocks = [s.cand[mside[s.cand] == side] for side in SIDES]
+    fpass = getattr(s.fafb, "passing", None)
+    f_blocks = side_blocks(np.nonzero(frare)[0], s.fafb.side, fpass, pooled)
+    m_blocks = side_blocks(s.cand, s.tgt.side, getattr(s.tgt, "passing", None), pooled)
     n = max(len(b) for b in f_blocks + m_blocks)
     print(
-        f"FAFB rare {[len(b) for b in f_blocks]}, candidates {[len(b) for b in m_blocks]}"
+        f"source rare {[len(b) for b in f_blocks]}, candidates {[len(b) for b in m_blocks]}"
         f" (of {len(s.cand)}), n = {n}",
         flush=True,
     )
-    F = as32(subgraph(s.fafb, *f_blocks, n))
-    M = as32(subgraph(s.tgt, *m_blocks, n))
+    F = as32(block_adjacency(s.fafb, f_blocks, n))
+    M = as32(block_adjacency(s.tgt, m_blocks, n))
     print({"F": {k: v.nnz for k, v in F.items()}, "M": {k: v.nnz for k, v in M.items()}})
 
     truth = s.stage1.label.to_numpy(dtype=object)
     stage1 = s.stage1.pred.to_numpy(dtype=object)
-    types = stratify.fafb_types()
+    types = getattr(s, "types", None)
+    types = stratify.fafb_types() if types is None else types
     rows = []
-    in_rare = pd.notna(truth) & rare(truth, s.sizes)
+    tag = cand_tag(args.candidates)
     ref = REFERENCE[args.target]
     references = [(ref, truth)]  # per reference: 2-4 stratum, its matched part, all labeled
     regions = []  # 2-4 stratum of the first reference by region
@@ -311,47 +566,74 @@ def match(s, args) -> None:
         references.append(("ref B", morph_labels(s.tgt)))
         region = np.asarray(s.tgt.region)
         regions = [(r, region == r) for r in ("central_brain", "optic_lobe")]
+    if args.target in STAGE1_MANC:  # nerve cord: by super-class group of the true type
+        if args.target == "banc_cord":
+            references.append(("ref B", morph_labels(s.tgt, "alt_type")))
+        group = pd.Series(truth, dtype=object).map(types.region).to_numpy(dtype=object)
+        regions = [(r, group == r) for r in sorted(types.region.unique())]
+        passing = np.asarray(s.tgt.passing, dtype=bool)
+        regions += [("passing", passing), ("not passing", ~passing)]
+    root_ids = s.tgt.node_ids.numpy()
+    fallbacks = [load_fallback(run, root_ids, s.sizes) for run in args.fallback]
+    fafb_ids = s.fafb.node_ids.numpy()
 
-    def evaluate(method: str, matches: list | None, seconds: float) -> None:
+    def assignments(matches: list) -> list:
+        """Per block: FAFB index (into the block) of each real candidate, -1 on a dummy."""
+        return [
+            np.where(mt[: len(mb)] < len(fb), mt[: len(mb)], -1)
+            for fb, mb, mt in zip(f_blocks, m_blocks, matches, strict=True)
+        ]
+
+    def evaluate(method: str, assign: list | None, seconds: float, extra=None) -> None:
         pred = stage1.copy()
+        fmatch = np.full(len(truth), -1, dtype=np.int64)  # assigned FAFB root id, -1: none
         info = {"to_dummy": 0, "fafb_unmatched": 0}
-        for fb, mb, mt in zip(f_blocks, m_blocks, matches or [], strict=False):
-            fm = mt[: len(mb)]
-            real = fm < len(fb)
-            pred[mb[real]] = flabel[fb[fm[real]]]
+        for fb, mb, am in zip(f_blocks, m_blocks, assign or [], strict=False):
+            real = am >= 0
+            pred[mb[real]] = flabel[fb[am[real]]]
+            fmatch[mb[real]] = fafb_ids[fb[am[real]]]
             info["to_dummy"] += int((~real).sum())
-            info["fafb_unmatched"] += int(len(fb) - real.sum())
+            info["fafb_unmatched"] += int(len(fb) - len(np.unique(am[real])))
         matched = np.isin(np.arange(len(truth)), np.concatenate(m_blocks))
-        subsets = []
-        for i, (name, lab) in enumerate(references):
-            r = pd.notna(lab) & rare(lab, s.sizes)
-            suffix = "" if i == 0 else f" ({name})"  # the first reference's names as for MCNS
-            subsets += [
-                (name, lab, f"2-4 ({name})", r),
-                (name, lab, "2-4, matched candidates" + suffix, r & matched),
-                (name, lab, "all labeled" + suffix, np.ones(len(lab), bool)),
-            ]
-        subsets += [(ref, truth, f"2-4 ({ref}), {name}", in_rare & k) for name, k in regions]
-        for name, lab, subset, k in subsets:
-            rows.append(
-                {
-                    "candidates": args.candidates,
-                    "method": method,
-                    "reference": name,
-                    "subset": subset,
-                    **score(lab, pred, k, types),
-                    **info,
-                    "seconds": round(seconds),
-                }
+        labelings = [(method, pred)]
+        for coarse, gate in fallbacks:  # idea 2: non-assigned neurons from a coarse model
+            labelings.append(
+                (
+                    f"{method} + two-tier m{gate}",
+                    two_tier(pred, fmatch >= 0, stage1, coarse, gate, s.sizes),
+                )
             )
-            print(rows[-1], flush=True)
+        for name, p in labelings:
+            for row in score_rows(p, references, regions, s.sizes, types, matched):
+                rows.append(
+                    {"candidates": tag, "method": name, **row, **info, "seconds": round(seconds)}
+                )
+                print(rows[-1], flush=True)
         if method.startswith("gm"):
-            out = {"root_id": s.tgt.node_ids.numpy(), "label": truth}
+            out = {"root_id": root_ids, "label": truth}
             out.update({f"label_{name}": lab for name, lab in references[1:]})
-            out.update(stage1=stage1, pred=pred)
-            pd.DataFrame(out).iloc[s.cand].to_parquet(
-                s.out / f"matches_{args.candidates}_{method}.parquet"
-            )
+            out.update(stage1=stage1, pred=pred, fafb_root_id=fmatch, **(extra or {}))
+            pd.DataFrame(out).iloc[s.cand].to_parquet(s.out / f"matches_{tag}_{method}.parquet")
+
+    def evaluate_matching(method: str, matches: list, seconds: float) -> None:
+        """The matching, and idea 3a on it (absorb; absorb + reject by centered gain)."""
+        t = time.time()
+        P = permutations(matches, n)
+        gc = centered_gradient(F, M, P)
+        del P
+        absorbed, rejected = [], []
+        gain = np.full(len(truth), np.nan, dtype=np.float32)
+        for fb, mb, am, g in zip(f_blocks, m_blocks, assignments(matches), gc, strict=True):
+            fm = np.where(am >= 0, am, len(fb))
+            ab, rj, own = absorb_reject(g, fm, len(fb))
+            absorbed.append(ab)
+            rejected.append(rj)
+            gain[mb] = own
+        del gc
+        print(f"centered gains, absorb / reject: {time.time() - t:.0f} s", flush=True)
+        evaluate(method, assignments(matches), seconds, {"gain_centered": gain})
+        evaluate(f"{method}_absorb", absorbed, seconds)
+        evaluate(f"{method}_absorb_reject", rejected, seconds)
 
     evaluate("stage 1 (label-free GNN)", None, 0.0)
     bary = np.full((n, n), 1.0 / n, dtype=np.float32)
@@ -362,7 +644,7 @@ def match(s, args) -> None:
         ]
         t = time.time()
         q0 = [project(p) for p in softs]
-        evaluate("soft probabilities, one-to-one", q0, time.time() - t)
+        evaluate("soft probabilities, one-to-one", assignments(q0), time.time() - t)
         linear = None
         if args.lam > 0:  # lam = 1: both terms equal at the soft probabilities' matching
             perms = [np.zeros((n, n), dtype=np.float32) for _ in q0]
@@ -380,31 +662,41 @@ def match(s, args) -> None:
             p0.append(sinkhorn(soft).astype(np.float32))
         del softs
     else:
-        p0, linear = [bary, bary.copy()], None
+        p0, linear = [bary] + [bary.copy() for _ in f_blocks[1:]], None
     del bary
     t = time.time()
     matches = faq_blocks(F, M, p0, args.iters, linear)
     method = f"gm_{args.start}" + (f"_lam{args.lam:g}" if linear is not None else "")
     if args.variant != s.sel["chosen"]["variant"]:
         method += f"_{args.variant}"
-    evaluate(method, matches, time.time() - t)
+    if pooled:
+        method += "_pass"
+    evaluate_matching(method, matches, time.time() - t)
+    if args.capacity > 1:  # idea 3b: each FAFB neuron may take up to c candidates
+        t = time.time()
+        lmos = [partial(lap_capacity, c=args.capacity, r=len(fb)) for fb in f_blocks]
+        cap = faq_blocks(F, M, permutations(matches, n), args.cap_iters, lmos=lmos)
+        evaluate_matching(f"{method}_cap{args.capacity}", cap, time.time() - t)
 
     m = pd.DataFrame(rows)
     f = s.out / "metrics.csv"
     if f.exists():
         old = pd.read_csv(f)
-        old = old[~((old.candidates == args.candidates) & old.method.isin(m.method))]
+        old = old[~((old.candidates == tag) & old.method.isin(m.method))]
         m = pd.concat([old, m], ignore_index=True)
     m.to_csv(f, index=False)
     info = {
         "target": args.target,
         "stage1": args.stage1,
-        "candidates": args.candidates,
+        "candidates": tag,
         "method": method,
         "iters": args.iters,
         "variant": args.variant,
         "stage1_variant": s.sel["chosen"]["variant"],
-        "fafb_rare": [len(b) for b in f_blocks],
+        "source": getattr(args, "source", "fafb"),
+        "blocks": list(BLOCK_NAMES[: len(f_blocks)]),
+        "fafb_rare": [len(b) for b in f_blocks],  # the source's rare neurons per block
+        "source_rare": [len(b) for b in f_blocks],
         "target_candidates": [len(b) for b in m_blocks],
         "candidates_without_side": int(len(s.cand) - sum(len(b) for b in m_blocks)),
         "fafb_rare_without_side": int(frare.sum() - sum(len(b) for b in f_blocks)),
@@ -414,19 +706,45 @@ def match(s, args) -> None:
             args.target: {k: v.nnz for k, v in M.items()},
         },
     }
-    (s.out / f"info_{args.candidates}_{method}.json").write_text(json.dumps(info, indent=2))
+    (s.out / f"info_{tag}_{method}.json").write_text(json.dumps(info, indent=2))
 
 
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("--stage", choices=["weights", "match"], required=True)
-    ap.add_argument("--target", choices=sorted(STAGE1), default="mcns")
-    ap.add_argument("--stage1", help="stage-1 run under results/size_threshold/m2 (by target)")
+    ap.add_argument("--source", choices=sorted(STAGE1_ROOTS), default="fafb")
+    ap.add_argument("--target", choices=sorted({*STAGE1, *STAGE1_MANC}), default="mcns")
+    ap.add_argument("--stage1", help="stage-1 run under results/size_threshold[_manc]/m2")
     ap.add_argument("--out", help="output directory under results/ (graph_matching_<target>)")
     ap.add_argument("--variant", help="target graph for the matching (stage 1's chosen variant)")
-    ap.add_argument("--candidates", choices=["gnn", "oracle"], default="gnn")
+    ap.add_argument(
+        "--candidates",
+        default="gnn",
+        help="gnn, union, oracle or file:<name> (candidates_<name>.parquet in the stage-1 "
+        "directory)",
+    )
+    ap.add_argument(
+        "--passing-block",
+        action="store_true",
+        help="match the neurons that pass through the neck in a third block, whatever their side",
+    )
+    ap.add_argument(
+        "--fallback",
+        nargs="*",
+        default=[],
+        help="coarse stage-1 runs under results/ (e.g. size_threshold/m10/label_free): also "
+        "report the two-tier labeling, non-assigned neurons from each",
+    )
     ap.add_argument("--start", choices=["bary", "soft"], default="bary")
+    ap.add_argument(
+        "--capacity",
+        type=int,
+        default=1,
+        help="> 1: after the one-to-one matching, Frank-Wolfe from it with each FAFB neuron "
+        "taking up to this many candidates (idea 3b)",
+    )
+    ap.add_argument("--cap-iters", type=int, default=10, help="iterations for --capacity")
     ap.add_argument("--iters", type=int, default=30)
     ap.add_argument(
         "--lam",
@@ -436,10 +754,20 @@ def main() -> None:
         "that lam = 1 makes it equal to the graph term at their one-to-one matching",
     )
     args = ap.parse_args()
-    args.stage1 = args.stage1 or STAGE1[args.target]
+    defaults = STAGE1_MANC if args.source == "manc" else STAGE1
+    if args.target not in defaults:
+        ap.error(f"--source {args.source} goes with --target {' / '.join(sorted(defaults))}")
+    args.stage1 = args.stage1 or defaults[args.target]
     args.out_dir = REPO_ROOT / "results" / (args.out or f"graph_matching_{args.target}")
     if args.variant and args.stage == "weights":
         ap.error("the soft probabilities are those of stage 1's variant; --variant is for match")
+    named = ("gnn", "union", "oracle")
+    if args.candidates not in named and not args.candidates.startswith("file:"):
+        ap.error("--candidates: gnn, union, oracle or file:<name>")
+    if args.candidates == "union" and (args.stage == "weights" or args.start == "soft"):
+        ap.error("union candidates run only --stage match from the barycenter")
+    if args.candidates.startswith("file:") and (args.stage == "weights" or args.start == "soft"):
+        ap.error("file candidates run only --stage match from the barycenter")
     args.out_dir.mkdir(parents=True, exist_ok=True)
     s = setup(args)
     if args.stage == "weights":

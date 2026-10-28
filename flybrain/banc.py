@@ -42,6 +42,8 @@ from flybrain.loading import (
     RAW_DIR,
     WEIGHT_COL,
     degrade_tables,
+    drop_passing_pairs,
+    drop_self_connections,
 )
 
 BANC_RAW_DIR = RAW_DIR / "banc"
@@ -141,3 +143,104 @@ def load_banc_tables(
     connections = connections[connections[WEIGHT_COL] >= min_raw].copy()
     connections[WEIGHT_COL] = connections[WEIGHT_COL].to_numpy(dtype=np.float64) * scale
     return neurons, connections
+
+
+# --- nerve cord (docs/vnc_rare_protocol.md): a target of the MANC source -----------------------
+
+CORD_CACHE_MIN_RAW = 1  # smallest threshold D2 considered
+# Variants by the BANC rules, relative to MANC at threshold 5 instead of FAFB: "raw" threshold
+# 5; "density" the threshold whose connections per neuron are closest to MANC's; "scaled"
+# threshold 5, counts x the factor that matches MANC's synapses per neuron. From D2
+# (results/vnc_rare/d2_graph_stats.json; no labels): MANC at >= 5 has 55.1 connections and 969
+# synapses per neuron, the BANC cord 16.9 and 235 without self-connections (31 % of MANC's
+# connections, about what the brain had of FAFB's); >= 2 gives 47.8 connections per neuron.
+CORD_VARIANTS = {"raw": (5, 1.0), "density": (2, 1.0), "scaled": (5, 4.13)}  # (min raw, scale)
+CORD_PASSING = (
+    "ascending",
+    "descending",
+    "sensory_ascending",
+    "sensory_descending",
+    "ascending_visceral_circulatory",
+)
+
+
+def cord_neurons(meta: pd.DataFrame) -> pd.DataFrame:
+    """Proofread nerve-cord neurons in the MANC schema: root_id, super_class, cell_type (reference
+    A: manc_cell_type, the type of the matched MANC body), alt_type (reference B: BANC's curated
+    cell_type), side, passing. Descending neurons, whose somata lie in the brain, are included."""
+    super_class = meta["super_class"].fillna("")
+    proofread = (meta["proofread"] == "TRUE") | (meta["roughly_proofread"] == "TRUE")
+    in_cord = (meta["region"] == "ventral_nerve_cord") | super_class.isin(
+        ["descending", "sensory_descending"]
+    )
+    m = meta[proofread & in_cord & ~super_class.isin(NOT_NEURONS)]
+    return pd.DataFrame(
+        {
+            ID_COL: m["banc_888_id"].astype(np.int64).to_numpy(),
+            "super_class": m["super_class"].astype("string").to_numpy(),
+            "cell_type": m["manc_cell_type"].astype("string").to_numpy(),
+            "alt_type": m["cell_type"].astype("string").to_numpy(),
+            "side": m["side"].fillna("").to_numpy(dtype=object),
+            "passing": m["super_class"].isin(CORD_PASSING).to_numpy(),
+        }
+    )
+
+
+def build_banc_cord_cache(
+    raw_dir: Path = BANC_RAW_DIR, processed_dir: Path = PROCESSED_DIR
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Reduce the raw BANC files to cord neurons and their connections (>= CORD_CACHE_MIN_RAW)."""
+    for name in (META_FILE, EDGES_FILE):
+        if not (raw_dir / name).exists():
+            raise FileNotFoundError(f"{raw_dir / name} not found; see data/README.md")
+    neurons = cord_neurons(pd.read_feather(raw_dir / META_FILE))
+    ids = pa.array(neurons[ID_COL].astype(str).to_numpy())
+    edges = pf.read_table(raw_dir / EDGES_FILE, columns=["pre", "post", "count"])
+    keep = pc.and_(
+        pc.and_(pc.is_in(edges["pre"], value_set=ids), pc.is_in(edges["post"], value_set=ids)),
+        pc.greater_equal(edges["count"], CORD_CACHE_MIN_RAW),
+    )
+    edges = edges.filter(keep)
+    connections = pd.DataFrame(
+        {
+            PRE_COL: pc.cast(edges["pre"], pa.int64()).to_numpy(),
+            POST_COL: pc.cast(edges["post"], pa.int64()).to_numpy(),
+            WEIGHT_COL: edges["count"].to_numpy(),
+        }
+    )
+    connections = drop_self_connections(connections).reset_index(drop=True)
+    processed_dir.mkdir(parents=True, exist_ok=True)
+    neurons.to_parquet(processed_dir / "banc_cord_neurons.parquet", index=False)
+    connections.to_parquet(processed_dir / "banc_cord_connections.parquet", index=False)
+    return neurons, connections
+
+
+def banc_cord_cache(
+    raw_dir: Path = BANC_RAW_DIR, processed_dir: Path = PROCESSED_DIR
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """The cached cord (neurons, connections), all counts >= CORD_CACHE_MIN_RAW, passing pairs
+    kept."""
+    n_cache = processed_dir / "banc_cord_neurons.parquet"
+    c_cache = processed_dir / "banc_cord_connections.parquet"
+    if n_cache.exists() and c_cache.exists():
+        return pd.read_parquet(n_cache), pd.read_parquet(c_cache)
+    return build_banc_cord_cache(raw_dir, processed_dir)
+
+
+def load_banc_cord_tables(
+    variant: str = "raw",
+    raw_dir: Path = BANC_RAW_DIR,
+    processed_dir: Path = PROCESSED_DIR,
+    degrade: dict | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(neurons, connections) of the BANC nerve cord, preprocessed as in CORD_VARIANTS[variant],
+    without connections between two passing neurons (loading.drop_passing_pairs)."""
+    if variant not in CORD_VARIANTS:
+        raise ValueError(f"variant must be one of {sorted(CORD_VARIANTS)}, got {variant!r}")
+    neurons, connections = banc_cord_cache(raw_dir, processed_dir)
+    if degrade:
+        neurons, connections = degrade_tables(neurons, connections, **degrade, min_count=None)
+    min_raw, scale = CORD_VARIANTS[variant]
+    connections = connections[connections[WEIGHT_COL] >= min_raw].copy()
+    connections[WEIGHT_COL] = connections[WEIGHT_COL].to_numpy(dtype=np.float64) * scale
+    return neurons, drop_passing_pairs(neurons, connections)
