@@ -28,133 +28,119 @@
 \setlength{\parskip}{0.4em}
 \setlength{\parindent}{0pt}
 \renewcommand{\floatpagefraction}{0.75}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
 
-\title{Typing the rare neurons of an unlabeled connectome by their wiring: a transferred GNN selects the candidates, graph matching types them}
+\title{Typing the rare neurons of an unlabeled connectome by graph matching, guided by a transferred graph neural network}
 \author{Maximilian Vogt\thanks{Code, protocols and the command for every number:
 \url{https://github.com/Paradoxsmile/flybrain}.}}
-\date{Draft v0.4, October 2026}
+\date{October 2026}
 
 \begin{document}
 \maketitle
 \begin{abstract}
 
-New connectome reconstructions are typed by matching their neurons to an annotated reference. Most cell types are rare, with two to four neurons per brain, and connectivity-based typing needs labeled partners in the target. We type rare neurons without any target label in two stages. A graph neural network that sees only anonymous wiring, transferred from the reference, selects the candidate neurons, and graph matching against the reference's rare-type neurons assigns their types. We tested the method under protocols committed before any run on held-out data. On the sparse BANC brain it raised rare-type accuracy from 22 to 41~\%; from the male nerve cord MANC to the nerve cords of BANC and of the male CNS, from 40 to 61~\% and from 72 to 82~\%. References built from morphology or from curated typing gave the same gains. Wiring complements morphology: on BANC's brain, automatic morphology matches (NBLAST) alone type 67~\% of the rare-type neurons, and taking the matched type wherever graph matching assigns a neuron raises this to 73~\% (exploratory). The approach needs the target's full wiring: a partial volume, the hemibrain, cannot be typed this way.
+New connectome reconstructions are typed by matching their neurons to an annotated reference. Most cell types are rare, with two to four neurons per brain, and methods that type neurons by their connections need labeled partners in the target. We type rare neurons without any target label in two stages. A graph neural network (GNN) that sees only anonymous wiring is trained on the reference and transferred to the target, where it selects candidate neurons; graph matching against the reference's rare-type neurons then assigns their types. In tests whose protocols were committed before any run on the held-out data, accuracy on rare-type neurons rose from 22 to 41~\% on the sparse BANC brain and, with an improved candidate rule, from 40 to 61~\% and from 72 to 82~\% in the nerve cords of BANC and of the male CNS. Wiring is a signal independent of morphology. In a pre-registered test on BANC's brain, combining it with automatic morphology matches (NBLAST) beat NBLAST alone by 2.3 points (95~\% CI 1.3–3.2), short of the 3 points we required; in the nerve cord, where these matches are weak, it gained 23 points. BANC's reference types come from reviewed NBLAST matches, which favors NBLAST in this comparison.
 
 \end{abstract}
 
 \section{Introduction}\label{sec:intro}
 
-Electron-microscopy connectomes of the adult \emph{Drosophila} central nervous system now exist for several individuals: the female FAFB/FlyWire brain (\citealp{dorkenwald2024}; \citealp{schlegel2024}), the hemibrain (\citealp{scheffer2020}), the male ventral nerve cord MANC (\citealp{takemura2024}; \citealp{marin2024}), the male CNS (MCNS; \citealp{berg2026}) and the female brain and nerve cord BANC (\citealp{bates2026}). Their value rests on cell-type annotations. New reconstructions are typed by matching their neurons to an annotated reference, by morphology and by connectivity (\citealp{schlegel2024}; \citealp{bates2026}). Most of the types are small: of FlyWire's 8,772 cell types, about three quarters have two to four neurons. Connectivity-based typing compares each neuron's synaptic partners by type, as in the definition of optic-lobe types (\citealp{matsliah2024}) and in NTAC (\citealp{schwartzman2026}), and therefore needs labeled partners in the target.
+Electron-microscopy connectomes of the adult \emph{Drosophila} central nervous system now exist for several individuals: the female FAFB/FlyWire brain (\citealp{dorkenwald2024}; \citealp{schlegel2024}), the hemibrain (\citealp{scheffer2020}), the male ventral nerve cord MANC (\citealp{takemura2024}; \citealp{marin2024}), the male CNS (MCNS; \citealp{berg2026}) and the female brain and nerve cord BANC (\citealp{bates2026}). Their value rests on cell-type annotations. New reconstructions are typed by matching their neurons to an annotated reference, by morphology and by connectivity (\citealp{schlegel2024}; \citealp{bates2026}). Most types are small: of FlyWire's 8,772 cell types, about three quarters have two to four neurons. Connectivity-based typing compares each neuron's synaptic partners by type, as in the definition of optic-lobe types (\citealp{matsliah2024}) and in NTAC (\citealp{schwartzman2026}), and therefore needs labeled partners in the target.
 
-We study these rare types in a target in which no neuron is labeled, using only the anonymous wiring diagram, the directed graph of neurons and synapse counts. A classifier trained on the reference has seen one or two examples of each rare type. But these types were defined by matching neurons across hemispheres and brains, and pairing neurons is what graph matching does without labels (\citealp{pedigo2023}). Graph matching needs to know which target neurons to pair, though. We therefore let a graph neural network (GNN), trained on the reference and transferred to the target without labels, decide which neurons to match, and graph matching decide their types. Our contributions:
+We type these rare neurons in a target in which no neuron is labeled, using only its anonymous wiring diagram: the directed graph of neurons and synapse counts. A classifier trained on the reference has seen one or two examples of each rare type. But these types were defined by pairing neurons across hemispheres and brains, and pairing neurons is what graph matching does without labels (\citealp{pedigo2023}). Graph matching needs to know which target neurons to pair, though. We therefore let a graph neural network (GNN), trained on the reference and transferred to the target without labels, decide which neurons to match, and graph matching decide their types (Figure~\ref{fig:1}a). Our contributions:
 
 \begin{enumerate}[leftmargin=*,itemsep=2pt]
 
-\item \textbf{Label-free typing of rare types by a GNN and graph matching} (Figure~\ref{fig:1}). Within FlyWire, graph matching types the right-hemisphere neurons of 2–4-neuron types at 92~\%, against 76~\% for the GNN. Between FlyWire and the male CNS, the label-free combination raises these types from 54 to 75~\% (Section~\ref{sec:res-dev}).
+\item \textbf{Graph matching types rare neurons once a transferred GNN has chosen the candidates.} Within FlyWire, on the same candidates, matching types 92~\% of the right-hemisphere neurons of 2–4-neuron types, against 80~\% for the GNN; without any label, the two stages raise these types from 79 to 86~\%. From FlyWire to the male CNS they rise from 54 to 82~\% (Section~\ref{sec:res-dev}).
 
-\item \textbf{Pre-registered tests, failures included.} On BANC's brain and from MANC to the nerve cords of BANC and MCNS, the gain held, also against references built from morphology or curated typing; candidate selection is the bottleneck (Sections~\ref{sec:res-banc}–\ref{sec:res-cord}). The tests also showed that a fallback tuned on the brain fails in the nerve cord and, for the GNN alone, that the original rule for choosing its preprocessing fails on sparse reconstructions and that partial volumes are beyond the approach (Section~\ref{sec:res-common}).
+\item \textbf{The gain holds on held-out connectomes, and candidate selection is the bottleneck.} In three pre-registered tests, on BANC's brain and from MANC to the nerve cords of BANC and MCNS, the two stages gained 10–21 points over the GNN alone (Section~\ref{sec:res-test}). Matching with perfectly chosen candidates would gain another 5–25 points (Section~\ref{sec:res-cand}).
 
-\item \textbf{Wiring adds to morphology.} On BANC's rare types, unreviewed NBLAST matches type more brain neurons than wiring alone, but the two err on different neurons, and combining them beats either (Section~\ref{sec:res-morph}, exploratory).
-
-\item \textbf{A wiring-only GNN that transfers without labels.} The first stage, a Dir-SAGE GNN (\citealp{rossi2023}) with prior matching of type sizes and a label-free choice of preprocessing, also types common cell types of an unlabeled hemisphere or a second complete connectome. Section~\ref{sec:res-common} summarizes these results; the details are in the Supplement.
+\item \textbf{Wiring is an independent signal next to morphology.} It adds little where automatic morphology matches are good (BANC brain, +2.3 points in a pre-registered test that missed its 3-point rule) and a lot where they are weak (BANC cord, +23 points). BANC's reference types are partly NBLAST's own answers, which tilts the comparison toward morphology (Section~\ref{sec:res-morph}).
 
 \end{enumerate}
+
+We report all five pre-registered tests, including what failed in them (Table~\ref{tab:tests}): the first rule for choosing the GNN's preprocessing, a fallback for unmatched neurons, a threshold set too high, seeding the matching with morphology matches, and typing a partial volume.
 
 \begin{figure}[tbp]
 \centering
 \includegraphics[width=\linewidth]{figures/rare_types.pdf}
-\caption{(a) The two-stage pipeline. (b) Accuracy on target neurons of 2–4-neuron source types, without any target label, for each source → target pair: stage 1 alone, the two-stage pipeline (filled: broad candidates where run, strict within FlyWire; open: strict candidates, as pre-registered on the BANC brain), oracle candidates, and on BANC NBLAST morphology matches alone and the matching-first combination (Table~\ref{tab:names}, Section~\ref{sec:res-morph}). * pre-registered tests; the BANC-brain broad-candidate and morphology rows are exploratory.}\label{fig:1}
+\caption{(a) The two-stage pipeline. A rare type has 2–4 neurons in the source. (b) Accuracy on the target neurons of rare types, without any target label, for each source → target pair. Stage 1 within FlyWire is the majority vote of three GNNs; elsewhere it is the label-free pipeline after NTAC (Section~\ref{sec:stage1}). Strict and broad candidates are defined in Table~\ref{tab:names}. Oracle candidates are the labeled rare-type target neurons, so that point uses labels and shows what perfect candidate selection would give. * pre-registered tests; on the BANC brain the pre-registered pipeline used strict candidates, and the broad-candidate point is exploratory. Numbers: Tables~\ref{tab:dev} and~\ref{tab:test}.}\label{fig:1}
 \end{figure}
 
 \section{Related work}
 
-\textbf{Cell typing from connectomes.} Fly connectomes have been annotated with thousands of types from morphology and connectivity (\citealp{scheffer2020}; \citealp{schlegel2024}; \citealp{matsliah2024}; \citealp{marin2024}). In the optic lobe, types were defined from each neuron's input and output vectors over types (\citealp{matsliah2024}). NTAC (\citealp{schwartzman2026}) automates this from labeled seeds (97.0~\% on 434 FlyWire types in our reimplementation, Supplement~\ref{sec:S-within}) and has an unsupervised mode. Learned approaches mostly use morphology (\citealp{troidl2024}) or combine it with connectivity (NeuNet; \citealp{liao2024}), where connectivity alone reached 59~\% on hemibrain classes. Across datasets, types are matched by NBLAST, connectivity alignment and combinations of both (\citealp{schlegel2024}; \citealp{bates2026}; \citealp{berg2026}). The typing methods read partner labels or are evaluated within one labeled graph; we know of no evaluation of a trained typing model transferred to an unlabeled connectome.
+\textbf{Cell typing from connectomes.} Fly connectomes have been annotated with thousands of types from morphology and connectivity (\citealp{scheffer2020}; \citealp{schlegel2024}; \citealp{matsliah2024}; \citealp{marin2024}). In the optic lobe, types were defined from each neuron's input and output vectors over types (\citealp{matsliah2024}). NTAC (\citealp{schwartzman2026}) automates this from labeled seeds (97.0~\% on 434 FlyWire types in our reimplementation, Supplement~\ref{sec:S-within}) and has an unsupervised mode. Learned approaches mostly use morphology (\citealp{troidl2024}) or combine it with connectivity (NeuNet; \citealp{liao2024}). Across datasets, types are matched by NBLAST (\citealp{costa2016}), connectivity alignment and combinations of both (\citealp{schlegel2024}; \citealp{bates2026}; \citealp{berg2026}). These typing methods read partner labels or are evaluated within one labeled graph; we know of no evaluation of a trained typing model transferred to an unlabeled connectome.
 
-\textbf{Graph matching and label-free structure.} Graph matching finds the correspondence between the nodes of two graphs that best aligns their edges; the relaxed quadratic assignment problem is solved efficiently by Frank–Wolfe iterations (FAQ; \citealp{vogelstein2015}). Bisected graph matching, which also aligns the connections between hemispheres, pairs bilaterally homologous neurons of the larval connectome from connectivity alone (\citealp{pedigo2023}). Adjacency spectral embedding with Gaussian mixtures recovers neuron groups in the larval mushroom body without labels (\citealp{priebe2017}). These methods match or cluster neuron by neuron; we use graph matching as the second stage after a transferred classifier has selected the candidates, across animals and connectomes.
+\textbf{Graph matching and label-free structure.} Graph matching finds the correspondence between the nodes of two graphs that best aligns their edges; the relaxed quadratic assignment problem is solved efficiently by Frank–Wolfe iterations (FAQ; \citealp{vogelstein2015}), and seeded graph matching fixes part of the correspondence in advance (\citealp{fishkind2019}). Bisected graph matching, which also aligns the connections between hemispheres, pairs bilaterally homologous neurons of the larval connectome from connectivity alone (\citealp{pedigo2023}). Adjacency spectral embedding with Gaussian mixtures recovers neuron groups in the larval mushroom body without labels (\citealp{priebe2017}). These methods match or cluster neuron by neuron; we use graph matching as the second stage after a transferred classifier has selected the candidates, across animals and connectomes.
 
-\textbf{Graph learning and domain adaptation.} Neurons mostly connect to neurons of other types, a heterophilic setting in which standard message passing struggles (\citealp{zhu2020}). Aggregating separately over in- and out-neighbors (Dir-GNN; \citealp{rossi2023}) raises effective homophily; our model is Dir-SAGE (\citealp{hamilton2017}; \citealp{rossi2023}) with synapse-weighted means. For transfer without target labels, prior matching is a form of label-shift correction (\citealp{saerens2002}) and of optimal transport with fixed class marginals (Sinkhorn scaling), and it mirrors reference mapping in single-cell genomics, where batch effects separate a query from an annotated atlas. Our revised selection rule uses agreement between independently trained models, which tracks their error under distribution shift (\citealp{jiang2022}).
+\textbf{Graph learning and domain adaptation.} Neurons mostly connect to neurons of other types, a heterophilic setting in which standard message passing struggles (\citealp{zhu2020}). Aggregating separately over in- and out-neighbors (Dir-GNN; \citealp{rossi2023}) raises effective homophily; our model is Dir-SAGE (\citealp{hamilton2017}; \citealp{rossi2023}) with synapse-weighted means. For transfer without target labels, prior matching is a form of label-shift correction (\citealp{saerens2002}) computed by Sinkhorn scaling (\citealp{cuturi2013}), and it mirrors reference mapping in single-cell genomics, where batch effects separate a query from an annotated atlas. Our selection rule uses agreement between independently trained models, which tracks their error under distribution shift (\citealp{jiang2022}).
 
 \section{Data and methods}\label{sec:methods}
 
-\textbf{Connectomes} (Table~\ref{tab:1}). FlyWire FAFB v783 is the source and development connectome for the brain. MCNS v1.0 (brain only) is the second development connectome; its \texttt{flywireType} annotation maps FlyWire types onto its neurons. BANC v888 and the hemibrain v1.2.1 were used only in pre-registered tests. For the nerve-cord test, MANC v1.2.1 (harmonized by the BANC project) is the source and the nerve cords of BANC and MCNS are the targets; no nerve cord was used in development. Neurons are nodes, directed edges are connections weighted by synapse count. FAFB connections have at least 5 synapses (Codex); the other connectomes are aligned to the source by fixed, label-free rules (Section~\ref{sec:align}).
+\subsection{Data, labels and references}\label{sec:data}
+
+\textbf{Connectomes} (Table~\ref{tab:1}). FlyWire FAFB v783 is the source for the brain and, with MCNS v1.0, one of the two development connectomes. BANC v888 and the hemibrain v1.2.1 were used only in pre-registered tests. For the nerve-cord test, MANC v1.2.1 (harmonized by the BANC project) is the source and the nerve cords of BANC and MCNS are the targets; no nerve cord was used in development. Neurons are nodes; directed edges are connections weighted by synapse count. FAFB connections have at least 5 synapses (Codex); the other connectomes are aligned to the source by fixed, label-free rules (Supplement~\ref{sec:S-details}).
 
 \begin{table}[tbp]
 \centering
-\scriptsize
-\caption{Connectomes. Brain columns: labels are the 434 FlyWire types with at least 20 neurons; nerve-cord columns: MANC types with at least 2 neurons (alignment reference).}\label{tab:1}
-\setlength{\tabcolsep}{3pt}
-\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.14\linewidth}*{7}{>{\raggedright\arraybackslash\hspace{0pt}}X}}
+\footnotesize
+\caption{Connectomes. Conn./syn.: connections and synapses per neuron, counting connections of at least 5 synapses. Labeled neurons: brains, the 434 FlyWire types with at least 20 neurons; nerve cords, MANC types with at least 2 neurons. Test: used only in pre-registered tests.}\label{tab:1}
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.17\linewidth}>{\raggedright\arraybackslash}p{0.12\linewidth}rrrL}
 \toprule
- & FAFB v783 & MCNS v1.0 brain & BANC v888 brain & Hemibrain v1.2.1 & MANC v1.2.1 & BANC v888 cord & MCNS v1.0 cord \\
+Connectome & Role & Neurons & Conn./syn. & Labeled (types) & Notes \\
 \midrule
-Role & source, development & development (both directions) & pre-registered tests & pre-registered test & source (cord test) & pre-registered test & pre-registered test \\
-Neurons in the graph & 139,255 & 144,725 & 133,549 & 25,348 & 23,650 & 25,929 & 24,073 \\
-Connections / synapses per neuron (≥ 5 synapses) & 26.8 / 364 & 35.9 / 494 & 8.6 / 100 & 26.7 / 387 & 55.1 / 969 & 16.9 / 235 & 43.4 / 759 \\
-Labeled neurons (types) & 108,647 (434) & 109,901 (394) & 63,332 (409) & 7,639 (202) & 22,883 (3,901) & 22,451 (3,677) & 21,402 (3,670) \\
-Particularities &  & male; synapse detection differs & sparse; types assigned by connectivity alignment to FAFB; no R1-6 photoreceptors & central brain only; 16~\% of neurons cropped & male & female; sparse & male \\
+FAFB v783 & source, develop\-ment & 139,255 & 26.8 / 364 & 108,647 (434) & female \\
+MCNS v1.0 brain & develop\-ment & 144,725 & 35.9 / 494 & 109,901 (394) & male; different synapse detection \\
+BANC v888 brain & tests & 133,549 & 8.6 / 100 & 63,332 (409) & female; sparse; no R1-6 photoreceptors \\
+Hemibrain v1.2.1 & test & 25,348 & 26.7 / 387 & 7,639 (202) & central brain only; 16~\% of neurons cropped \\
+MANC v1.2.1 & source (cord) & 23,650 & 55.1 / 969 & 22,883 (3,901) & male \\
+BANC v888 cord & test & 25,929 & 16.9 / 235 & 22,451 (3,677) & female; sparse \\
+MCNS v1.0 cord & test & 24,073 & 43.4 / 759 & 21,402 (3,670) & male \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\textbf{Labels.} The rare-type pipeline uses all FlyWire cell types with at least 2 neurons (8,658 types, 99~\% of the labeled neurons). The \textbf{rare stratum} of a target is its labeled neurons whose type has 2–4 neurons in the source. In the nerve cord, labels are MANC cell types (3,901 types at ≥ 2, 2,452 of them with 2–4 neurons). In every target the labels are coded in the source's label space and used only for evaluation. The common-type results (Section~\ref{sec:res-common} and the Supplement) use super classes (10) and the 434 cell types with at least 20 neurons in FAFB (78~\% of neurons), the set their protocols and saved models fix; for new common-type results we recommend a minimum of 10 (779 types, 81~\%).
+\textbf{Rare types.} The rare-type pipeline uses all FlyWire cell types with at least 2 neurons (8,658 types, 99~\% of the labeled neurons). A \textbf{rare type} has 2–4 neurons in the source, and the \textbf{rare-type neurons} of a target are its labeled neurons of such types. In the nerve cord, labels are MANC cell types (3,901 types with at least 2 neurons, 2,452 of them rare). Stage 1 on common types (Section~\ref{sec:res-common}) uses the 434 FlyWire types with at least 20 neurons and 10 super classes.
 
-\textbf{Names.} Table~\ref{tab:names} defines the names of the pipeline's parts and variants, which we use throughout, together with the code options that run them.
+\textbf{References.} In every target, labels are coded in the source's type names and used only for evaluation. The main reference, the \textbf{alignment reference}, is each target's own typing aligned to the source's types by its connectome team. How it was made matters for what agreement with it means. MCNS maps its neurons to FlyWire and MANC types by matching that uses connectivity. BANC matched its neurons to FlyWire and MANC neurons by NBLAST proposals that were reviewed by hand, partly with connectivity (\citealp{bates2026}). On the rare-type neurons of BANC's brain, the reference type equals the type of the reviewed FlyWire match for 99.8~\% of neurons, and that match is NBLAST's top hit for 67.5~\%. BANC also has a \textbf{second reference}: the type of the morphology-matched FlyWire neuron (brain) and its curated typing (cord). For rare types the second references agree with the alignment references on 98–99.5~\% of neurons, so they check the scoring but are not independent evidence. Every reference we have was built with morphology matching, connectivity or both.
 
-\begin{table}[!tp]
+\begin{table}[tbp]
 \centering
-\scriptsize
-\caption{Names used in this paper. Code options refer to the scripts in \texttt{experiments/\allowbreak{}b\_\allowbreak{}gnn\_\allowbreak{}celltypes/} (see \texttt{docs/\allowbreak{}reproduce.md}).}\label{tab:names}
-\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.22\linewidth}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{0.2\linewidth}}
+\footnotesize
+\caption{Names used in this paper. \texttt{docs/\allowbreak{}reproduce.md} maps them to the code options.}\label{tab:names}
+\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.25\linewidth}L}
 \toprule
-Name & Meaning & Code option \\
+Name & Meaning \\
 \midrule
-\multicolumn{3}{l}{\emph{Pipeline}} \\
-Stage 1 & The GNN trained on the source, applied to the target without labels: a selection rule chooses its preprocessing, then prior matching and NTAC refinement (Section~\ref{sec:stage1}). & \texttt{label\_\allowbreak{}free.py}, \texttt{size\_\allowbreak{}threshold.py} \\
-Prior matching (coverage prior) & Rescales the GNN's class probabilities so that predicted type sizes match the source's (partial volume: the types predicted inside the covered neuropils). & \texttt{-{}-prior source} (\texttt{coverage}) \\
-Stage 2; two-stage typing & Graph matching of the source's rare-type neurons to the candidates, blocked by hemisphere (Section~\ref{sec:stage2}); a matched candidate takes its partner's type, every other neuron keeps its stage-1 type. & \texttt{graph\_\allowbreak{}matching\_\allowbreak{}mcns.py} \\
-\midrule
-\multicolumn{3}{l}{\emph{Selection rules for stage 1's preprocessing}} \\
-Type-consistency rule & The original rule: the most self-consistent labeling on the target. & \texttt{-{}-select consistency} \\
-Size-and-agreement rule & The revised rule: best mean rank of type-size divergence from the prior and agreement between seeds. & \texttt{-{}-select size\_\allowbreak{}agreement} \\
-\midrule
-\multicolumn{3}{l}{\emph{Candidates for stage 2}} \\
-Strict candidates & Neurons whose stage-1 type after NTAC is rare (the first rule). & \texttt{-{}-candidates gnn} \\
-Broad candidates & Neurons whose stage-1 type before or after NTAC is rare (the improved rule). & \texttt{-{}-candidates union} \\
-Morphology-augmented candidates & Broad candidates plus the neurons whose NBLAST match has a rare type. & \texttt{-{}-candidates file:\allowbreak{}nblast\_\allowbreak{}union} \\
-Oracle candidates & The labeled rare-type target neurons; a diagnostic that uses labels. & \texttt{-{}-candidates oracle} \\
-\midrule
-\multicolumn{3}{l}{\emph{Matching options}} \\
-Neck block & A third matching block for neurons that pass through the neck (nerve cord). & \texttt{-{}-passing-block} \\
-Coarse fallback & Unmatched neurons typed by the ≥ 10 model; failed in the nerve cord, dropped. & \texttt{-{}-fallback} \\
-\midrule
-\multicolumn{3}{l}{\emph{Alignment variants of a target graph (Section~\ref{sec:align})}} \\
-Unaligned / density-aligned / count-scaled & Threshold 5 / threshold matching the source's connections per neuron / counts scaled to the source's synapses per neuron. & \texttt{raw} / \texttt{density} / \texttt{scaled} (\texttt{janelia} for MCNS) \\
-\midrule
-\multicolumn{3}{l}{\emph{Morphology comparison (Section~\ref{sec:res-morph})}} \\
-Matching-first combination & The matched type where stage 2 assigns a neuron, NBLAST's type elsewhere. & \\
-NBLAST-first combination & NBLAST's type, the two-stage type where NBLAST gives none. & \\
-\midrule
-\multicolumn{3}{l}{\emph{Evaluation references}} \\
-Alignment reference & The target's own typing, aligned to the source's types (partly by connectivity). & reference A \\
-Morphology reference & BANC brain: the type of the morphology-matched FlyWire neuron (central brain). & reference B \\
-Curated reference & BANC cord: BANC's curated typing. & reference B \\
+Stage 1 & The GNN trained on the source, applied to the target without labels: label-free choice of preprocessing, prior matching, NTAC refinement (Section~\ref{sec:stage1}). \\
+Prior matching & Rescales the GNN's class probabilities so that predicted type sizes match the source's. \\
+Size-and-agreement rule & Chooses stage 1's preprocessing without labels: best mean rank of type-size divergence from the prior and agreement between seeds. \\
+Stage 2 & Graph matching of the source's rare-type neurons to the candidates (Section~\ref{sec:stage2}). \\
+Two-stage typing & Each matched candidate takes its partner's type; every other neuron keeps its stage-1 type. \\
+Strict candidates & Neurons whose stage-1 type after NTAC is rare (the first rule). \\
+Broad candidates & Neurons whose stage-1 type before or after NTAC is rare (the improved rule). \\
+Morphology-augmented candidates & Broad candidates plus the neurons whose NBLAST match has a rare type. \\
+Oracle candidates & The labeled rare-type target neurons; a diagnostic that uses labels. \\
+Neck block & A third matching block for nerve-cord neurons that pass through the neck. \\
+Seeded matching & Matching in which confident NBLAST matches are fixed in advance (Section~\ref{sec:res-morph}). \\
+Alignment / second reference & The target's typing aligned to the source's types / BANC's morphology-matched (brain) or curated (cord) typing (Section~\ref{sec:data}). \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
 \subsection{Stage 1: a wiring-only GNN, transferred without labels}\label{sec:stage1}
 
-Each neuron has six features: in- and out-degree, input and output synapses, and mean synapses per input and output connection (log-scaled, z-scored). A layer computes $h'_i = W_{\mathrm{self}}\, h_i + W_{\mathrm{in}}\, \mathrm{mean}_{\mathrm{in}}(h) + W_{\mathrm{out}}\, \mathrm{mean}_{\mathrm{out}}(h)$, with means over pre- and postsynaptic partners weighted by synapse count. Cell types use 3 layers (300 epochs, class-weighted loss), super classes 4 layers (1,000 epochs); depth and options were chosen by validation macro-F1. With thousands of types the output layer and prior matching are computed in chunks, which reproduces the standard code where both can run. The model never sees a partner's label, so it applies unchanged to an unlabeled graph. Three seeds are trained throughout.
+Each neuron has six features: in- and out-degree, input and output synapses, and mean synapses per input and output connection (log-scaled, z-scored). A layer computes $h'_i = W_{\mathrm{self}}\, h_i + W_{\mathrm{in}}\, \mathrm{mean}_{\mathrm{in}}(h) + W_{\mathrm{out}}\, \mathrm{mean}_{\mathrm{out}}(h)$, with means over pre- and postsynaptic partners weighted by synapse count. The model never sees a partner's label, so it applies unchanged to an unlabeled graph. Three seeds are trained throughout (training details in Supplement~\ref{sec:S-details}).
 
-A model trained on the source is applied to the target. Every choice is made without target labels:
+A model trained on the source is applied to the target in three label-free steps:
 
 \begin{itemize}[leftmargin=*,itemsep=2pt]
 
-\item \textbf{Candidate preprocessings.} Each target is built in a few alignment variants (Section~\ref{sec:align}); target features are normalized either with the source's training statistics or with the target's own; prior matching is applied with strength $\rho \in \{0, 0.25, 0.5, 0.75, 1\}$.
+\item \textbf{Prior matching.} Cell-type sizes are stereotyped across flies, but a transferred classifier shifts neurons between neighboring types. We rescale its class probabilities so that the expected number of neurons per type matches the type distribution the same model predicts on its source, scaled to the target.
 
-\item \textbf{Prior matching.} Cell-type sizes are stereotyped across flies, but a transferred classifier shifts neurons between neighboring types. We rescale its class probabilities with weights v (Sinkhorn iterations) so that the expected number of neurons per type matches the type distribution the same model predicts on its source, scaled to the target; ρ interpolates between the raw prediction and full matching ($p_k \cdot v_k^{\rho}$, renormalized).
-
-\item \textbf{Selection.} The \emph{type-consistency rule}, used in the first test, picks the preprocessing whose labeling (mean over three seeds) is most self-consistent on the target: each neuron of a random half gets the label of its most similar neuron in the other half (synapses per partner type, weighted Jaccard), and agreement is chance-corrected (Cohen's κ). The \emph{size-and-agreement rule}, which replaced it after the first test (Section~\ref{sec:res-common}) and is used in all rare-type tests, takes the best mean rank of two other label-free properties: the Jensen-Shannon divergence of the predicted type sizes from the prior, and the agreement between the three seeds' labelings.
+\item \textbf{Choice of preprocessing.} How the target graph is aligned to the source, how its features are normalized and how strongly prior matching is applied give 30 candidate preprocessings. The size-and-agreement rule chooses one without labels: the best mean rank of two properties, the divergence of the predicted type sizes from the prior and the agreement between the three seeds' labelings. It replaced an earlier rule after that rule failed on BANC (Section~\ref{sec:res-common}; Supplement~\ref{sec:S-sparse}).
 
 \item \textbf{Refinement.} NTAC on the target, seeded with the neurons on which all three seeds agree.
 
@@ -164,210 +150,186 @@ A model trained on the source is applied to the target. Every choice is made wit
 
 \begin{itemize}[leftmargin=*,itemsep=2pt]
 
-\item \textbf{Candidates} are the target neurons that stage 1 assigns to a rare type (2–4 source neurons). In the first tests these were the \emph{strict candidates}, whose type after NTAC is rare. After the BANC rare-type test, candidate selection was improved on development data (Section~\ref{sec:res-cand}); the \emph{broad candidates} take a neuron if its type before or after NTAC is rare.
+\item \textbf{Candidates} are the target neurons that stage 1 assigns to a rare type. The first tests used strict candidates (type after NTAC is rare). After the BANC brain test, the rule was improved on development data (Section~\ref{sec:res-cand}): broad candidates take a neuron if its type before or after NTAC is rare.
 
-\item \textbf{Matching.} Stage 2 matches the source's rare-type neurons one-to-one to the candidates. It maximizes the agreement of the two log1p(synapse) adjacency matrices among the selected neurons by Frank–Wolfe on the relaxed quadratic assignment problem (FAQ; \citealp{vogelstein2015}), from the barycenter, for 30 iterations. The assignment is block-diagonal by hemisphere and aligns both ipsilateral and contralateral connections (bisected matching; \citealp{pedigo2023}). In the nerve cord a third, pooled \emph{neck block} holds the neurons that pass through the neck (ascending and descending), whose side annotation follows the neck in MANC and the soma in the targets. Each block is padded to a square; candidates matched to padding are not assigned.
+\item \textbf{Matching.} Stage 2 matches the source's rare-type neurons one-to-one to the candidates. It maximizes the agreement of the two log1p(synapse) adjacency matrices among the selected neurons by Frank–Wolfe on the relaxed quadratic assignment problem (FAQ; \citealp{vogelstein2015}), from the barycenter, for 30 iterations. The assignment is block-diagonal by hemisphere and aligns both ipsilateral and contralateral connections (bisected matching; \citealp{pedigo2023}). In the nerve cord a third, pooled neck block holds the ascending and descending neurons, whose side annotation follows the neck in MANC and the soma in the targets. Each block is padded to a square; candidates matched to padding are not assigned.
 
 \item \textbf{Final labeling.} A matched candidate takes the type of its source neuron; every other neuron keeps its stage-1 type.
 
-\item \textbf{Diagnostic.} With \emph{oracle candidates} (the labeled rare-type target neurons), the matching shows what perfect candidate selection would give.
-
 \end{itemize}
 
-At the barycenter the gradient is nearly of rank one and the exact assignment solver takes 5–10 minutes, so the first step pairs the leading singular vectors by rank. A block of about 9,300 neurons per side takes 27 minutes and 4.5 GB on a CPU, the nerve-cord blocks under 3 minutes.
+At the barycenter the gradient is nearly of rank one and the exact assignment solver takes 5–10 minutes, so the first step pairs the leading singular vectors by rank. A block of about 9,300 neurons per side takes 27 minutes and 4.5 GB on a CPU, the nerve-cord blocks under 3 minutes. The GNN uses PyTorch Geometric (\citealp{fey2019}), the assignment steps SciPy (\citealp{virtanen2020}).
 
-\subsection{Alignment variants}\label{sec:align}
+\subsection{Evaluation and pre-registration}\label{sec:prereg}
 
-Connectomes differ in synapse detection and completeness. Each target gets variants that align one statistic with the source by a fixed rule: \emph{unaligned} (threshold 5, nothing aligned), \emph{density-aligned} (the threshold whose connections per neuron are closest to the source's) and \emph{count-scaled} (threshold 5, counts scaled so that synapses per neuron match the source's). For MCNS against FAFB we use Janelia's published scaling factor (0.581) for the last rule. In the nerve-cord test, self-connections and connections between two passing neurons, which in the targets can lie in the brain, are dropped in all three graphs.
+\textbf{Metrics.} Accuracy is the share of labeled target neurons whose predicted type equals the reference type, computed over the rare-type neurons unless stated otherwise. Macro-F1, the mean F1 over the true types present, is given in Supplement~\ref{sec:S-f1}. The 95~\% intervals resample types (2,000 draws; 10,000 for the test of Section~\ref{sec:res-morph}), with the predictions fixed; they do not include the variability of the matching itself.
 
-\subsection{Pre-registration and development sandbox}\label{sec:prereg}
-
-For each test on a new dataset, data, labels, candidates, selection rule, method, the reported numbers and explicit expectations were committed to the repository before any model was run on it: \texttt{docs/\allowbreak{}banc\_\allowbreak{}protocol.md} (BANC brain, common types), \texttt{docs/\allowbreak{}hemibrain\_\allowbreak{}protocol.md}, \texttt{docs/\allowbreak{}banc\_\allowbreak{}rare\_\allowbreak{}protocol.md} (BANC brain, rare types) and \texttt{docs/\allowbreak{}vnc\_\allowbreak{}rare\_\allowbreak{}protocol.md} (nerve cords); Table~\ref{tab:tests} summarizes them. The protocols allow only data-loading and memory fixes afterwards and require every deviation to be reported. Between tests, methods were changed only on a sandbox built from the development connectomes, with known labels: synapse counts binomially thinned before the threshold, cell types removed, the volume restricted to the central brain, or a fraction of neurons cropped (each synapse of a cropped neuron kept with probability 0.1). For partial volumes, a coverage prior uses the type distribution predicted for the FAFB neurons inside the covered volume, those with at least 10~\% of their synapses outside the optic-lobe neuropils; it needs only the list of covered neuropils.
+\textbf{Pre-registration.} For each test on a new dataset, the data, labels, candidates, selection rule, method, reported numbers and explicit expectations were committed to the repository before any model was run on it (Table~\ref{tab:tests}). The protocols allow only data-loading and memory fixes afterwards and require every deviation to be reported. Between tests, methods were changed only on degraded copies of the development connectomes, whose labels are known: synapse counts binomially thinned before the threshold, cell types removed, the volume restricted to the central brain, or a fraction of neurons cropped (each synapse of a cropped neuron kept with probability 0.1).
 
 \section{Results}
 
-\subsection{Rare types on development data: the GNN selects, graph matching types}\label{sec:res-dev}
+\subsection{Graph matching types rare neurons better than the GNN}\label{sec:res-dev}
 
-Having seen one or two neurons of a type on the left hemisphere, the GNN types its right-hemisphere neurons at 75.9~\% (6,438 types of 2–4 neurons, out of 8,582). These types were defined by matching neurons across hemispheres (\citealp{schlegel2024}), so the task is close to pairing homologs. We matched the left and right neurons of 2–4-neuron types by graph matching (Section~\ref{sec:stage2}) and gave each right neuron the type of its matched left neuron (Table~\ref{tab:3}). Knowing which right neurons are rare-type is an advantage the GNN does not have, so we also restricted the GNN's votes to the same candidates and made them one-to-one.
-
-\begin{table}[tbp]
-\centering
-\footnotesize
-\caption{The 8,142 right-hemisphere FlyWire neurons of 2–4-neuron types, typed from the left hemisphere, accuracy~\% / macro-F1.}\label{tab:3}
-\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.42\linewidth}>{\centering\arraybackslash}X>{\centering\arraybackslash}X}
-\toprule
-Method & Labels used on the right & Accuracy / macro-F1 \\
-\midrule
-GNN (mean of 3 seeds) & none & 75.9 / 0.74 \\
-GNN votes, restricted to rare candidates, one-to-one & which neurons are rare-type & 79.8 / 0.81 \\
-Graph matching, ipsilateral & which neurons are rare-type & 91.2 / 0.92 \\
-Graph matching, bisected & which neurons are rare-type & \textbf{92.2 / 0.93} \\
-GNN selects rare-type candidates, graph matching types them & none & \textbf{85.8 / 0.88} \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-Graph matching beats the equally restricted GNN by 12 points and wins in every region, although it sees only the edges among about 8,000 neurons per side; starting it from the GNN's votes changes nothing. The two methods combine without labels: the GNN's rare-type candidates contain 93~\% of the true rare-type neurons (84~\% precision), and matching them raises the rare types from 78.9 to 85.8~\% (GNN majority vote) and macro-F1 over all right-hemisphere neurons from 0.75 to 0.84.
-
-Across animals the same division of labor works (Table~\ref{tab:4}). On FAFB → MCNS, stage 1 types the rare stratum at 54.2~\%, against 75.9~\% within FlyWire across hemispheres (Supplement~\ref{sec:S-transfer}). It assigns 18,479 MCNS neurons to a 2–4-neuron type; these strict candidates contain 84~\% of the labeled rare-type neurons. We matched them to the 16,365 FlyWire neurons of such types.
+Having seen one or two neurons of a type in the left hemisphere, the GNN types its right-hemisphere neurons at 75.9~\% (mean of three seeds; majority vote 78.9~\%). These types were defined by matching neurons across hemispheres (\citealp{schlegel2024}), so the task is close to pairing homologs. We matched the left and right neurons of rare types (Section~\ref{sec:stage2}) and gave each right neuron the type of its matched left neuron (Table~\ref{tab:dev}).
 
 \begin{table}[tbp]
 \centering
 \footnotesize
-\caption{MCNS neurons of 2–4-neuron FlyWire types (13,742 neurons, 5,370 types), without any MCNS label, accuracy~\% / macro-F1. FAFB → MCNS is the development pair; strict candidates.}\label{tab:4}
-\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.42\linewidth}>{\centering\arraybackslash}X>{\centering\arraybackslash}X}
+\caption{Development data: accuracy~\% on the target neurons of rare types. Left → right: the 8,142 right-hemisphere FlyWire neurons, typed from the left hemisphere. FlyWire → MCNS: 13,742 MCNS neurons of 5,370 types. Stage 1 is the majority vote of three GNNs within FlyWire and the label-free pipeline after NTAC on MCNS. –: not run.}\label{tab:dev}
+\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.5\linewidth}CC}
 \toprule
-Method & 2–4-neuron types & All labeled MCNS neurons \\
+Method & FlyWire left → right & FlyWire → MCNS \\
 \midrule
-Stage 1 & 54.2 / 0.49 & 84.2 / 0.51 \\
-Stage-1 probabilities, made one-to-one & 59.9 / 0.62 & 84.8 / 0.61 \\
-Two-stage (stage 1 selects candidates, graph matching types them) & \textbf{74.5 / 0.78} & \textbf{86.3 / 0.73} \\
-Same, matching started from the GNN probabilities & 74.6 / 0.78 & 86.3 / 0.74 \\
-Oracle candidates & 85.3 / 0.87 & 87.4 / 0.81 \\
+\multicolumn{3}{l}{\emph{Without any target label}} \\
+Stage 1 & 78.9 & 54.2 \\
+Stage-1 probabilities, made one-to-one on the strict candidates & – & 59.9 \\
+Two-stage, strict candidates & \textbf{85.8} & 74.5 \\
+Two-stage, broad candidates & – & \textbf{81.6} \\
+\midrule
+\multicolumn{3}{l}{\emph{Given which neurons are rare-type (oracle candidates)}} \\
+GNN votes, made one-to-one & 79.8 & – \\
+Graph matching, ipsilateral connections only & 91.2 & – \\
+Graph matching & 92.2 & 85.3 \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-The two stages raise the rarest types by 20 points and macro-F1 over all labeled MCNS neurons from 0.51 to 0.73. The wiring does the work: matching without any GNN input is as good as matching started from the GNN's probabilities (they agree on 93~\% of candidates), while making the GNN's own probabilities one-to-one gains only 6 points. On the rare-type neurons stage 1 selects, matching reaches 89.1~\% (stage 1: 64.8~\%), and the largest gains are where the GNN is weakest (ascending, descending and other types: 25 → 66~\%; central brain: 58 → 75~\%). Graph matching between two animals is nearly as accurate as between two hemispheres (85.3~\% with oracle candidates, against 92.2~\%), so the remaining loss is mostly candidate selection. Two caveats limit this result: the stage-1 pipeline was developed on this pair, and MCNS's mapping to FlyWire types for these rare types itself comes from cross-dataset matching that uses connectivity.
+On the same candidates, graph matching beats the GNN by 12 points (92.2 vs. 79.8~\%) and wins in every brain region, although it sees only the connections among about 8,000 neurons per side. The two methods combine without labels: the GNN's rare-type candidates contain 93~\% of the true rare-type neurons (84~\% precision), and matching them raises accuracy from 78.9 to 85.8~\%.
 
-\subsection{Pre-registered test on the BANC brain}\label{sec:res-banc}
+The same division of labor works across animals. From FlyWire to MCNS, stage 1 types the rare-type neurons at 54.2~\%. Its 18,479 strict candidates contain 84~\% of them; matching these to the 16,365 FlyWire neurons of rare types gives 74.5~\%, and broad candidates (92~\% recall) give 81.6~\%. The wiring does the work: making the GNN's probabilities one-to-one gains only 6 points, and starting the matching from them instead of the barycenter changes nothing (74.6~\%). The largest gains are where the GNN is weakest: ascending, descending and other neurons rise from 25 to 66~\%, central-brain neurons from 58 to 75~\%. Matching between two animals is nearly as accurate as between two hemispheres (85.3 vs. 92.2~\% with oracle candidates), so most of the remaining loss comes from candidate selection. Two caveats apply: stage 1 was developed on this pair, and MCNS's labels for these types come from cross-dataset matching that uses connectivity.
 
-We tested the two-stage pipeline on BANC under a protocol (\texttt{docs/\allowbreak{}banc\_\allowbreak{}rare\_\allowbreak{}protocol.md}, committed with the code in \texttt{0d1ee67} before either stage ran on BANC at this label set). BANC had been used before only for common types (Section~\ref{sec:res-common}). The protocol fixed stage 1's selection rule (the size-and-agreement rule, which here chose the best of the 30 candidate preprocessings), the matching (unchanged, strict candidates), two references and four expectations (Table~\ref{tab:5}). The morphology reference, the type of the FlyWire neuron matched to each BANC neuron by morphology, is independent of connectivity.
+\subsection{The gain holds on held-out connectomes}\label{sec:res-test}
+
+We tested the pipeline in three pre-registered tests (Table~\ref{tab:test}). On the BANC brain, the protocol (committed in \texttt{0d1ee67} before either stage ran on BANC at this label set) fixed strict candidates and the size-and-agreement rule, which chose the best of the 30 preprocessings. In the nerve cords (\texttt{5119069}), the source was MANC, on which the GNNs were trained unchanged; the targets were BANC's cord (female, 31~\% of MANC's connections per neuron) and MCNS's cord (a second male). This test used the broad candidates and one change disclosed before any model output on a cord, the neck block.
 
 \begin{table}[tbp]
 \centering
 \footnotesize
-\caption{Pre-registered test: BANC neurons of 2–4-neuron FlyWire types, without any BANC label, accuracy~\% / macro-F1; strict candidates. The 95~\% intervals of the alignment-reference accuracies, from resampling types, are ±1.1–1.2 points (\texttt{results/\allowbreak{}bootstrap\_\allowbreak{}ci}).}\label{tab:5}
-\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.34\linewidth}>{\centering\arraybackslash}X>{\centering\arraybackslash}X>{\centering\arraybackslash}X}
+\caption{Pre-registered tests: accuracy~\% on the target neurons of rare types, without any target label (alignment reference). The 95~\% intervals of these accuracies are ±1.1–2.0 points. Gain: the pre-registered pipeline (bold) over stage 1, with 95~\% interval. † exploratory: run after the test.}\label{tab:test}
+\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.3\linewidth}CCC}
 \toprule
-Method & Alignment reference (14,512 neurons) & Morphology reference (13,848) & All alignment-reference neurons (88,639) \\
+ & BANC brain & BANC cord & MCNS cord \\
+Source; rare-type neurons & FlyWire; 14,512 & MANC; 5,989 & MANC; 5,945 \\
 \midrule
-Stage 1 & 22.2 / 0.19 & 21.3 / 0.18 & 47.9 / 0.19 \\
-Two-stage & \textbf{41.3 / 0.47} & \textbf{40.6 / 0.47} & \textbf{51.0 / 0.40} \\
-Oracle candidates & 65.9 / 0.70 & 65.5 / 0.70 & 55.0 / 0.57 \\
+Stage 1 & 22.2 & 39.5 & 72.0 \\
+Two-stage, strict candidates & \textbf{41.3} & 52.1 & 77.1 \\
+Two-stage, broad candidates & 51.2† & \textbf{61.0} & \textbf{82.2} \\
+Oracle candidates & 65.9 & 75.5 & 87.0 \\
+\midrule
+Gain over stage 1 & +19.1 (18.0–20.1) & +21.4 (19.8–23.1) & +10.2 (8.9–11.5) \\
+Pre-registered threshold & ≥ 10: met & ≥ 15: met & ≥ 15: not met \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-All four expectations held: the two-stage pipeline beat stage 1 by at least 10 points on both references (+19.1, 95~\% interval 18.0–20.1 from resampling types, and +19.3; +20.3 on MCNS); over all labeled neurons macro-F1 rose by at least 0.05 (0.19 → 0.40) without a loss in accuracy (+3.1 points); the rare stratum stayed below FAFB → MCNS (41.3 vs. 74.5~\%); and matching withstood BANC's sparsity better than the GNN (with oracle candidates it kept 77~\% of its MCNS accuracy, stage 1 41~\%). Unlike for common types (Section~\ref{sec:res-common}), the morphology reference gives the same result, so the gain is not an artifact of connectivity-based labels. The absolute level is limited by candidate selection: stage 1 finds only 54~\% of the rare-type neurons on BANC (84~\% on MCNS), while matching types 77~\% of those it finds correctly.
+The two stages beat stage 1 in all three targets. On the BANC brain, all four expectations held. Over all labeled neurons, macro-F1 rose from 0.19 to 0.40 and accuracy by 3.1 points, and graph matching withstood BANC's sparsity better than the GNN: with oracle candidates it kept 77~\% of its MCNS accuracy, stage 1 only 41~\%. In the nerve cords, two of four expectations held on both cords. Broad candidates beat strict ones by at least 3 points (+8.9 and +5.1), and the pipeline closed at least half of the gap between stage 1 and oracle candidates (0.60 and 0.68). The gain of 15 points held on BANC but not on MCNS, where stage 1 was already at 72~\%. The fourth expectation, about a fallback for unmatched neurons, failed on both cords (Section~\ref{sec:res-cand}).
 
-\subsection{Improving candidate selection on development data}\label{sec:res-cand}
+Every neuron group gained on both cords; on BANC, descending neurons rose from 41 to 74~\% and motor neurons from 16 to 48~\%. Intrinsic neurons, whose references rest most on connectivity, gained no more than the others. Over all labeled neurons the pipeline also gained without the fallback (BANC 44.8 → 49.4~\%, MCNS 73.1 → 75.0~\%). BANC's second references give the same numbers (brain 21.3 → 40.6~\%, cord 40.7 → 61.0~\%), as expected from label sets that agree on 98–99.5~\% of neurons.
 
-Because BANC was then spent for rare types, we improved candidate selection on development data only. MCNS thinned to 25~\% of its synapses reproduces BANC's stage 1 (candidate recall 54.4 vs. 54.3~\%, rare-stratum accuracy 19.2 vs. 22.2~\%) and serves as a stand-in (Table~\ref{tab:6}).
+\subsection{Where the errors are: candidate selection}\label{sec:res-cand}
+
+With oracle candidates, matching is 5–25 points more accurate than with the selected ones (Table~\ref{tab:test}). On the BANC brain, stage 1 finds only 54~\% of the rare-type neurons (MCNS: 84~\%), while matching types 77~\% of those it finds correctly. Because BANC was used up for rare types after that test, we improved candidate selection on development data only. MCNS thinned to 25~\% of its synapses reproduces BANC's stage 1 (candidate recall 54.4 vs. 54.3~\%, accuracy 19.2 vs. 22.2~\%) and served as a stand-in (Table~\ref{tab:cand}).
 
 \begin{table}[tbp]
 \centering
 \footnotesize
-\caption{Candidate selection on development data: accuracy~\% / macro-F1 on the 2–4 stratum of MCNS, full and thinned to 25~\% of its synapses.}\label{tab:6}
-\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.34\linewidth}>{\centering\arraybackslash}X>{\centering\arraybackslash}X>{\centering\arraybackslash}X}
+\caption{Candidate selection on development data: recall of the rare-type neurons and accuracy~\% on them, MCNS thinned to 25~\% of its synapses and full.}\label{tab:cand}
+\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.34\linewidth}CCC}
 \toprule
-Candidates & Recall, thinned & Thinned (25~\%) & Full MCNS \\
+Candidates & Recall, thinned & Accuracy, thinned & Accuracy, full MCNS \\
 \midrule
-Strict: stage-1 type after NTAC is 2–4 (as tested on BANC) & 54.4~\% & 47.3 / 0.53 & 74.5 / 0.78 \\
-Broad: stage-1 type before or after NTAC is 2–4 & 70.0~\% & 60.1 / 0.65 & 81.6 / 0.83 \\
-Oracle: labeled rare-type neurons & – & 82.0 / 0.84 & 85.3 / 0.87 \\
+Strict (as tested on the BANC brain) & 54.4 & 47.3 & 74.5 \\
+Broad & 70.0 & \textbf{60.1} & \textbf{81.6} \\
+Oracle & 100 & 82.0 & 85.3 \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Selecting more candidates helps; ranking them better does not. The broad candidates raise recall from 54 to 70~\% on the thinned copy and from 84 to 92~\% on full MCNS, and matching stays accurate on the added neurons (81~\%). The rule has no free parameter, and a second thinning realization agrees within 1–2 points. Two further changes were tested. The coarse fallback, which types unmatched neurons with the ≥ 10 model, added 2.5–3.7 points over all labeled neurons; it was adopted and later failed in the nerve cord. Letting a FlyWire neuron match two candidates failed already here (oracle candidates: 85.3 → 76.1~\%), because candidates piled onto a few well-connected neurons.
+Selecting more candidates helps. Broad candidates raise recall from 54 to 70~\% on the thinned copy and from 84 to 92~\% on full MCNS, and matching stays accurate on the added neurons (81~\%). The rule has no free parameter, and a second thinning realization agrees within 1–2 points. On the BANC brain, broad candidates later raised accuracy from 41.3 to 51.2~\% (exploratory), and adding the neurons whose NBLAST match has a rare type raised candidate recall to 95~\% and accuracy to 62.6~\% (Section~\ref{sec:res-morph}).
 
-\subsection{Pre-registered test in the nerve cords}\label{sec:res-cord}
+Three other changes did not help. Letting a source neuron match two candidates failed on development data (oracle candidates: 85.3 → 76.1~\%), because candidates piled onto a few well-connected neurons. A coarse fallback, which typed unmatched neurons with a model trained on types of at least 10 neurons, added 2.5–3.7 points over all labeled neurons on development data, but cost 0.4 and 1.2 points on the cords; we dropped it. The neck block did help: without it, the cords' rare types lost 5.6–5.7 points. The cost of the matching is borne by types of 5–19 neurons (−1.5 to −2.5 points), because a fifth to a third of the candidates belong to other types and receive a rare type.
 
-We tested the improved pipeline in the nerve cord under a fourth protocol (\texttt{docs/\allowbreak{}vnc\_\allowbreak{}rare\_\allowbreak{}protocol.md}, committed with the code in \texttt{5119069} before any model ran on a target cord). The source is MANC, on which the GNNs were trained unchanged; the targets are the nerve cords of BANC (female, 31~\% of MANC's connections per neuron) and MCNS (a second male). The method was the one developed above (broad candidates, coarse fallback), with one disclosed change made before any model output on a cord: the neck block (Section~\ref{sec:stage2}). The alignment reference is each target's alignment to MANC, which for intrinsic neurons rests partly (BANC) or mainly (MCNS) on connectivity; the curated reference is BANC's curated typing (Table~\ref{tab:7}).
+\subsection{Wiring and morphology}\label{sec:res-morph}
+
+New reconstructions come with neuron shapes, and current typing starts from morphology matches (NBLAST; \citealp{costa2016}). BANC's metadata holds each neuron's NBLAST top match to FlyWire and to MANC before review, so we could compare and combine the two signals on BANC (Table~\ref{tab:morph}, Figure~\ref{fig:morph}).
 
 \begin{table}[tbp]
 \centering
 \footnotesize
-\caption{Pre-registered nerve-cord test: neurons of 2–4-neuron MANC types, without any target label, accuracy~\% / macro-F1. The 95~\% intervals of these accuracies, from resampling types, are ±1.2–2.0 points (\texttt{results/\allowbreak{}bootstrap\_\allowbreak{}ci}).}\label{tab:7}
-\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.34\linewidth}>{\centering\arraybackslash}X>{\centering\arraybackslash}X>{\centering\arraybackslash}X}
+\caption{Wiring and morphology on BANC: accuracy~\% on the target neurons of rare types, without any BANC label (alignment reference). NBLAST: the type of the top morphology match, before review. Combination: the matched type where the matching assigns a source neuron, NBLAST's type elsewhere. The exploratory rows were chosen after BANC's labels were known.}\label{tab:morph}
+\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.56\linewidth}CC}
 \toprule
-Method & BANC cord, alignment ref. (5,989) & BANC cord, curated ref. (5,257) & MCNS cord, alignment ref. (5,945) \\
+Labeling & BANC brain (14,512) & BANC cord (5,989) \\
 \midrule
-Stage 1 & 39.5 / 0.36 & 40.7 / 0.37 & 72.0 / 0.70 \\
-Two-stage, strict candidates (as on the BANC brain) & 52.1 / 0.55 & 51.7 / – & 77.1 / 0.79 \\
-Two-stage, broad candidates & \textbf{61.0 / 0.61} & \textbf{61.0 / 0.61} & \textbf{82.2 / 0.82} \\
-Oracle candidates & 75.5 / 0.73 & 75.5 / – & 87.0 / 0.86 \\
+NBLAST alone (morphology) & 66.5 & 30.5 \\
+Two-stage, broad candidates (wiring only) & 51.2 & 61.0 \\
+Two-stage, morphology-augmented candidates & 62.6 & 64.7 \\
+\midrule
+\multicolumn{3}{l}{\emph{Exploratory combinations}} \\
+Combination, broad candidates (best of six) & 72.5 & 64.9 \\
+Combination, morphology-augmented candidates & 70.6 & 65.1 \\
+\midrule
+\multicolumn{3}{l}{\emph{Pre-registered test: seeded matching}} \\
+Two-stage, seeded & 61.6 & 55.4 \\
+Combination, seeded & \textbf{68.7} & \textbf{53.7} \\
+Gain over NBLAST alone (95~\% interval) & +2.3 (1.3–3.2) & +23.2 (21.8–24.5) \\
+Rule: gain ≥ 3 points, interval above 0 & not met & met (secondary) \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Two of the four expectations held on both cords, and two did not. The broad candidates beat the strict ones by at least 3 points (+8.9 and +5.1), and the pipeline closed at least half of the gap between stage 1 and oracle candidates (0.60 and 0.68, against 0.44 for the strict-candidate pipeline on the BANC brain). The gain of at least 15 points over stage 1 held on BANC (+21.4, 95~\% interval 19.8–23.1; +20.3 against the curated reference) but not on MCNS (+10.2, 8.9–11.5), where stage 1 was already at 72.0~\% and the oracle at 87.0~\%; we had set the threshold from earlier tests and should have set it relative to the gap. The coarse fallback failed on both cords: the coarser model typed the neurons it covers worse than the fine one and cost 0.4 and 1.2 points over all labeled neurons. We therefore drop it from the recommended pipeline; the rare-type numbers do not depend on it, and without it the pipeline still gains over all labeled neurons (BANC 44.8 → 49.4~\%, MCNS 73.1 → 75.0~\%). Every neuron group gained on both cords (on BANC, descending neurons 41 → 74~\%, motor neurons 16 → 48~\%), and intrinsic neurons, whose references rest most on connectivity, gained no more than the others. Without the neck block the rare types lost 5.6–5.7 points. The cost is borne by types of 5–19 neurons (−1.5 to −2.5 points), because a fifth to a third of the candidates belong to other types and receive a rare type.
+\textbf{Exploratory comparison.} On the brain, morphology alone beats wiring alone (66.5 vs. 51.2~\%), but the two err on different neurons. Where NBLAST and the pre-registered two-stage typing agree, both are right in 95~\% of cases; where they disagree, NBLAST is right in 61~\% and the matching in 16~\%. We tried six label-free combinations (planned in \texttt{docs/\allowbreak{}finalize\_\allowbreak{}plan.md}, commit \texttt{9ecc769}, but run on a target whose labels were known). The best one, which takes the matched type where the matching assigns a FlyWire neuron and NBLAST's type elsewhere, reached 72.5~\%, 6.0 points above NBLAST alone. In the cord, NBLAST's top hit has the reviewed match's type in only 31~\% of cases, and wiring alone is twice as accurate.
 
-\subsection{Wiring and morphology (exploratory)}\label{sec:res-morph}
+\textbf{Pre-registered test.} Because the +6.0 was the best of six exploratory combinations, we fixed one further procedure, its contrast and its decision rule before running it (\texttt{docs/\allowbreak{}preregistration\_\allowbreak{}confirmatory.md}, commit \texttt{3949b10}). A confident NBLAST match, meaning a candidate whose NBLAST top hit is a rare-type FlyWire neuron in the same hemisphere and the top hit of no other candidate, is fixed as a seed (seeded graph matching; \citealp{fishkind2019}; 6,138 seeds in the brain). The matching then pairs the remaining candidates around the seeds, and each neuron takes the matched type where the matching assigned one and NBLAST's type elsewhere. The rule called the gain confirmed if it reached at least 3 points over NBLAST alone with a 95~\% interval above zero. On the brain, the combination reached 68.7~\% against 66.5~\% for NBLAST: a gain of 2.3 points (1.3–3.2), below the bar. Against the second reference the gain was 1.4 points (0.4–2.4). Wiring therefore adds to morphology on the brain, but by less than the margin we required, and the exploratory +6.0 is not confirmed. In the cord, the combination beat NBLAST by 23.2 points. BANC's labels had been seen before this test, so it is pre-registered in procedure, not on unseen data.
 
-New reconstructions come with neuron shapes, and current typing starts from morphology matches (NBLAST; \citealp{costa2016}). BANC's metadata holds each neuron's NBLAST top match to FlyWire and to MANC before review. We typed each BANC neuron by its match's type and compared this with the wiring-only pipeline and with two label-free combinations (Table~\ref{tab:8}). The comparison was planned before it was run (\texttt{docs/\allowbreak{}finalize\_\allowbreak{}plan.md}, commit \texttt{9ecc769}), including the rule for how to frame its outcome. BANC's labels were known, though, so these results are exploratory. They include the first runs of broad candidates on the BANC brain.
+Seeding itself hurt. Without seeds, on the same candidates, the combination reached 70.6~\% (brain) and 65.1~\% (cord) instead of 68.7 and 53.7~\%. About 16~\% of the brain seeds and 32~\% of the cord seeds carry a wrong type, and fixing them prevents the matching from correcting them.
 
-\begin{table}[tbp]
+\begin{figure}[tbp]
 \centering
-\footnotesize
-\caption{BANC neurons of 2–4-neuron source types, without any BANC label, accuracy~\% / macro-F1 (exploratory). NBLAST: the type of the top morphology match, before review. Brain: alignment reference; cord: alignment reference, with the curated reference giving the same numbers within 0.3 points.}\label{tab:8}
-\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.42\linewidth}>{\centering\arraybackslash}X>{\centering\arraybackslash}X}
-\toprule
-Method & BANC brain (14,512) & BANC cord (5,989) \\
-\midrule
-Two-stage, broad candidates (wiring only) & 51.2 / 0.57 & 61.0 / 0.61 \\
-NBLAST (morphology only) & 66.5 / 0.65 & 30.5 / 0.30 \\
-NBLAST-first combination & 70.7 / 0.68 & 31.3 / 0.30 \\
-Two-stage, morphology-augmented candidates & 62.6 / 0.67 & 64.7 / 0.63 \\
-\textbf{Matching-first combination} & \textbf{72.5 / 0.68} & \textbf{64.9 / 0.59} \\
-\bottomrule
-\end{tabularx}
-\end{table}
+\includegraphics[width=\linewidth]{figures/morphology.pdf}
+\caption{Wiring and morphology on BANC's rare-type neurons (alignment reference). (a) NBLAST alone, the two-stage typing with morphology-augmented candidates, and the pre-registered combination (seeded matching, NBLAST's type where the matching assigns none). (b) The brain neurons split by whether BANC's reviewers kept NBLAST's top hit as the match (9,002 neurons) or replaced it (4,331). Where review kept it, the reference is NBLAST's own answer.}\label{fig:morph}
+\end{figure}
 
-On the brain, morphology alone beats wiring alone (66.5 vs. 51.2~\%), but the two err on different neurons. Where NBLAST and the pre-registered two-stage typing agree, both are right in 95~\% of cases; where they disagree, NBLAST is right in 61~\% and the matching in 16~\%. The matching-first combination, which takes the matched type where the matching assigns a FlyWire neuron and NBLAST's elsewhere, reaches 72.5~\%, 6.0 points above NBLAST alone (95~\% interval 5.1–7.1, resampling 5,416 types). The gain is the same against the morphology reference (72.0 vs. 66.8~\%), which was itself built from NBLAST matches and favors them. Every combination built on the broad-candidate matching beats NBLAST by at least 4.1 points. Morphology also helps select candidates: NBLAST's rare-type neurons raise candidate recall from 70 to 95~\%, and the matching from 51.2 to 62.6~\%, with the best macro-F1 of all rows when combined (0.71). On the cord, raw NBLAST is weak: its match has the reviewed match's type in 31~\% of cases, and its errors include neurons of another class. There the 34-point gap is to unreviewed automatic morphology, not to morphology done well. With broad candidates, the BANC brain's rare types rise from 41.3~\% (strict candidates, pre-registered) to 51.2~\%, as on the development data (Table~\ref{tab:6}). Over all labeled neurons the combination costs common types (brain 59.8 vs. 62.8~\% for the NBLAST-first combination), so the matched types should replace NBLAST's only on the rare candidates.
+\textbf{The reference favors NBLAST.} BANC's types were assigned by reviewing and correcting NBLAST proposals (Section~\ref{sec:data}). NBLAST's accuracy against them is therefore largely the share of top hits that reviewers kept: it is right on 99.9~\% of the neurons where review kept its top hit and on 12.0~\% where review replaced it (Figure~\ref{fig:morph}b). Where reviewers replaced the hit, the pre-registered combination recovers the reviewed type for 39.1~\% of the neurons and the unseeded two-stage typing for 56.5~\%. Where they kept it, the combination loses 15.4 points against a reference that is NBLAST's answer by construction. Review also used connectivity, which may favor wiring where reviewers overrode NBLAST. Comparisons between wiring and morphology on BANC are therefore tilted, mostly toward morphology. A cleaner test would need a target whose types were assigned independently of NBLAST; MCNS, the other target, has no automatic morphology match to FlyWire. Over all labeled brain neurons, the pre-registered combination reached 61.0~\% against 56.4~\% for NBLAST.
 
 \subsection{Stage 1 on its own: common types}\label{sec:res-common}
 
-The rare-type pipeline relies on stage 1 transferring without labels. We developed and tested stage 1 on common types first, the 434 FlyWire cell types with at least 20 neurons and 10 super classes; this section summarizes those results, and the Supplement gives the tables and figures.
-
-\textbf{Within a connectome.} With labeled partners, NTAC is the best cell-type method (97.0~\%); the GNN comes close (95.3~\%, equal macro-F1) without seeing any partner label. On an unlabeled hemisphere, where the median test neuron has no synapse to a labeled partner, partner-label methods collapse on cell types (1–9~\%), while the GNN keeps 87–95~\%. The result replicates within MCNS (Supplement~\ref{sec:S-within}).
-
-\textbf{Between complete connectomes.} Applied to MCNS, the label-free pipeline types 394 cell types at 92.6~\% after NTAC without a single MCNS label, against 96.6~\% for a GNN trained on MCNS; in the reverse direction it reaches 83.4~\% on FlyWire. The type-consistency rule ranks the 30 candidate preprocessings like their accuracy (Spearman 0.95–0.97), and prior matching corrects the type sizes (87.6~\% without, 91.2~\% with). The headline number is mostly the optic lobe: its intrinsic types, 80~\% of MCNS's labeled neurons, are typed at 97.2~\%, the other neurons at 74.0~\%. Retrained with a minimum of two neurons per type, the pipeline types MCNS at 84.2~\% over 7,064 types; this is the stage 1 of the rare-type pipeline (Supplement~\ref{sec:S-transfer}).
-
-\textbf{Sparse and partial targets.} The first pre-registered test applied the unchanged pipeline to the BANC brain. Prior matching carried over (the best cell-type candidates use it, 13.0 and 17.5 points above the best without it), but the type-consistency rule did not: for MCNS → BANC cell types it chose a labeling that puts 77~\% of the neurons into one type (1.4~\% accuracy, against 58.0~\% for the best candidate). FAFB → BANC reached 61.7~\% after NTAC, and 32.3~\% against the morphology reference. Density explains about half of the drop (72.9~\% on a FlyWire copy thinned to BANC's density, 55.7~\% on BANC). On degraded development copies, the size-and-agreement rule had the smallest worst case and replaced the type-consistency rule; re-scored on BANC, it lands within 0.5 points of the best candidate in all four pre-registered runs, and in the later tests it chose the best candidate in four of five stage-1 runs. The hemibrain, a partial volume, cannot be typed from wiring: under the second protocol, cell types reached 19.6~\% and super classes 74.4~\%, barely above predicting the most frequent class (73.1~\%), because partners outside the volume and cut neurons remove the context the model relies on (Supplement~\ref{sec:S-sparse}).
-
-\textbf{Value next to hand labels.} On complete targets, a few percent of hand labels propagated by NTAC type common types better: by accuracy, the GNN is worth about 1.3~\% hand labels, more for small types. No label-free signal predicts a run's accuracy reliably, but seed agreement ranks neurons: reviewing the 20~\% least-agreed neurons finds 77~\% of the errors on MCNS and 34~\% on BANC, against 20~\% for a random review (Supplement~\ref{sec:S-effort}).
+The pipeline relies on stage 1 transferring without labels. We developed and tested it first on the 434 FlyWire types with at least 20 neurons; the Supplement gives the details. On an unlabeled hemisphere, where the median neuron has no synapse to a labeled partner, methods that read partner labels collapse on cell types (1–9~\%), while the GNN keeps 87–95~\%. Applied to MCNS, stage 1 types 394 cell types at 92.6~\% without a single MCNS label, against 96.6~\% for a GNN trained on MCNS; most of this is the optic lobe (97.2~\%; other neurons 74.0~\%). On the sparse BANC brain it reached 61.7~\%, and density explains about half of the drop. The first rule for choosing the preprocessing failed there (for MCNS → BANC it chose a labeling that put 77~\% of the neurons into one type) and was replaced by the size-and-agreement rule, which chose the best or a near-best preprocessing in every later test except the partial volume. A partial volume, the hemibrain, cannot be typed from wiring: cell types reached 19.6~\% and super classes 74.4~\%, barely above predicting the most frequent class (73.1~\%). On complete targets, a few percent of hand labels propagated by NTAC type common types better; the GNN is worth about 1.3~\% hand labels.
 
 \section{Discussion}
 
-\textbf{Rare types: pairing beats classifying.} For types with two to four neurons, a trained classifier has seen one or two examples, while graph matching uses the wiring among all candidates at once. These are also the types a hand-labeling budget reaches last. Within FlyWire, where these types were defined by pairing neurons across hemispheres, matching wins by 12–16 points; between animals, the transferred GNN's role is to decide which neurons to match. That division of labor held in three pre-registered tests (across sex, at a third of the source's density, and from brain to nerve cord with a new source) and against references built from morphology or curated by hand. Candidate selection remains the bottleneck: oracle candidates are 5–25 points better than the selected ones. One-to-one matching ignores that type sizes differ between animals; a looser assignment failed, because candidates piled onto a few well-connected neurons.
+\textbf{Pairing beats classifying for rare types.} A classifier has seen one or two examples of a rare type, while graph matching uses the wiring among all candidates at once. Within FlyWire, on the same candidates, matching wins by 12 points; between animals, the transferred GNN's role is to decide which neurons to match. This division of labor held in three pre-registered tests: across sex, at a third of the source's density, and from brain to nerve cord with a new source. These are also the types a hand-labeling budget reaches last. Candidate selection is the bottleneck, and one-to-one matching ignores that type sizes differ between animals; a looser assignment failed, because candidates piled onto a few well-connected neurons.
 
-\textbf{Wiring and morphology.} In practice, a new reconstruction is typed from morphology first. On BANC's brain, unreviewed NBLAST matches type rare-type neurons better than wiring alone, but the two fail on different neurons. Where they agree, the type is almost always right (95~\%), which gives a cheap confidence flag for review. Where they disagree, a neuron that graph matching assigns is better typed by the matching, which uses all of the candidates' connections at once. Morphology in turn fixes the bottleneck of the wiring pipeline: NBLAST's rare-type neurons raise candidate recall from 70 to 95~\%. We see the two-stage pipeline as a second, independent signal next to morphology, not a replacement for it. In the nerve cord, raw NBLAST matches confuse sibling types and classes, and wiring carries most of the information.
+\textbf{Wiring next to morphology.} In practice a new reconstruction is typed from morphology first, and our tests support a narrower claim than the exploratory analysis suggested. Wiring is an independent signal. On BANC's brain, where automatic NBLAST matches are good, it adds little: 2.3 points in the pre-registered test, which missed its 3-point rule, and up to 6 points in exploratory combinations. In BANC's cord, where these matches confuse sibling types and classes, it adds a lot (23 points). Where wiring and morphology agree, the type is almost always right (95~\%), which gives a cheap confidence flag for review, and morphology in turn fixes the wiring pipeline's bottleneck by raising candidate recall from 70 to 95~\%. Seeding the matching with hard NBLAST matches hurt; using NBLAST as a soft prior term in the matching is the natural next step. The size of the effect on BANC is uncertain in both directions, because the reference is partly NBLAST's own answer.
 
-\textbf{What stage 1 contributes.} Anonymous wiring identifies cell types without labeled partners, within a connectome and across complete connectomes, which is what lets the GNN select candidates in an unlabeled target. Prior matching is its most robust ingredient: it helped on every complete or sparse target (+3.6 to +17.5 points), even with types missing from the target. None of the selection rules is reliable alone; combining a size-based and an agreement-based signal chose the best or a near-best preprocessing in every later test except the partial volume. For common types on a complete target, a few hand labels with NTAC do better, so there the GNN's niche is starting an annotation and directing review.
+\textbf{Circularity and limitations.} Cell types were defined partly from connectivity, and every cross-dataset reference we used comes from matching that uses connectivity, morphology or both. Agreement with them is therefore partly agreement with another matching procedure. The GNN never sees partner identities, which weakens but does not remove this concern, and intrinsic nerve-cord neurons, whose references rest most on connectivity, gained no more than others. BANC's second references are not independent of its alignment references, and its NBLAST-based labels favor NBLAST. The rare-type pipeline was developed on one brain pair and tested on one held-out brain and two nerve cords. Single-neuron types are not predicted, and serial homologs in the nerve cord are not separated by the matching blocks. The recommended pipeline drops the fallback after the last test, so its all-neuron numbers come from runs reported in that test, not from a fresh one. The setting is transductive within a connectome. The size-and-agreement rule was chosen on 14 degraded development cases. Thinned copies cannot contain connections below the 5-synapse threshold. Results depend on how neurons and classes are aligned across datasets.
 
-\textbf{What does not carry over.} Transfer degrades with reconstruction density and fails for partial volumes. Both remove context the model relies on: in a sparse reconstruction, connections; in a partial volume, partners outside it and parts of cut neurons. For typing a partial volume, a model would need to be trained on correspondingly truncated graphs or combined with morphology. Add-ons tuned on development data are fragile: the coarse fallback helped on the brain and hurt in the nerve cord. No label-free signal we tried detects an error that all seeds share, so a transferred labeling still needs a labeled spot check.
-
-\textbf{Circularity.} Cell types were defined partly from connectivity, and cross-dataset labels (MCNS's \texttt{flywireType} and \texttt{mancType}, BANC's types, FlyWire names for hemibrain types) come from matching that uses connectivity. Agreement with them is therefore partly agreement with another connectivity-based procedure. The GNN never sees partner identities, which weakens but does not remove this concern. For rare types, the morphology reference gives the same gain as the connectivity-based one; for common types, it is the cleanest reference we found, and there FAFB → BANC reaches only 32~\%.
-
-\textbf{On pre-registration} (Table~\ref{tab:tests}). The first two pre-registered tests contradicted part of what development data suggested, and the third confirmed it. The fourth confirmed the core method but rejected an add-on tuned on development data, and it showed that an absolute threshold can be out of reach when the baseline is already strong; thresholds relative to an oracle are the better form. Degraded copies of annotated connectomes let us diagnose and repair failures without spending a new dataset; we recommend them as a test bed for any method meant to type new reconstructions.
+\textbf{On pre-registration} (Table~\ref{tab:tests}). The first two tests contradicted part of what development data suggested, and the third confirmed it. The fourth confirmed the core method but rejected an add-on tuned on development data, and it showed that an absolute threshold can be out of reach when the baseline is already strong; thresholds relative to the oracle are the better form. The fifth turned an exploratory +6.0 into a confirmed but smaller gain that missed its bar. Degraded copies of annotated connectomes let us diagnose and repair failures without spending a new dataset; we recommend them as a test bed for any method meant to type new reconstructions.
 
 \begin{table}[tbp]
 \centering
 \footnotesize
-\caption{The four pre-registered tests.}\label{tab:tests}
-\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.24\linewidth}>{\raggedright\arraybackslash}p{0.2\linewidth}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X}
+\caption{The five pre-registered tests, in the order they were run.}\label{tab:tests}
+\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.2\linewidth}>{\raggedright\arraybackslash}p{0.24\linewidth}LL}
 \toprule
 Test & Protocol (commit) & What was tested & Expectations \\
 \midrule
-BANC brain, common types & \texttt{banc\_\allowbreak{}protocol.md} (\texttt{85516a2}) & unchanged stage 1, type-consistency rule & 3: one held in every run, two only in some runs \\
-Hemibrain & \texttt{hemibrain\_\allowbreak{}protocol.md} (\texttt{161cf7b}) & size-and-agreement rule, coverage prior, partial volume & 4: three held, one held for super classes only \\
+BANC brain, common types & \texttt{banc\_\allowbreak{}protocol.md} (\texttt{85516a2}) & unchanged stage 1, first selection rule & 3: one held in every run, two only in some runs \\
+Hemibrain & \texttt{hemibrain\_\allowbreak{}protocol.md} (\texttt{161cf7b}) & size-and-agreement rule, partial volume & 4: three held, one for super classes only \\
 BANC brain, rare types & \texttt{banc\_\allowbreak{}rare\_\allowbreak{}protocol.md} (\texttt{0d1ee67}) & two-stage pipeline, strict candidates & 4: all held \\
-Nerve cords, rare types (MANC → BANC, MCNS) & \texttt{vnc\_\allowbreak{}rare\_\allowbreak{}protocol.md} (\texttt{5119069}) & broad candidates, coarse fallback, neck block & 4 per cord: two held on both, one on BANC only, the fallback failed on both \\
+Nerve cords, rare types (MANC → BANC, MCNS) & \texttt{vnc\_\allowbreak{}rare\_\allowbreak{}protocol.md} (\texttt{5119069}) & broad candidates, fallback, neck block & 4 per cord: two held on both, one on BANC only, the fallback failed on both \\
+BANC, wiring and morphology & \texttt{preregistration\_\allowbreak{}confirmatory.md} (\texttt{3949b10}) & seeded matching combined with NBLAST & 1: not met on the brain (+2.3 < 3 points) \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\textbf{Limitations.} The rare-type pipeline was developed on one brain pair and tested on one held-out brain and two nerve cords; every rare-type reference except BANC's morphology matches rests partly on connectivity. The morphology comparison is exploratory: it uses BANC's unreviewed NBLAST matches on a target whose labels were known, and was not repeated on MCNS; a reviewed or better-registered morphology match would be a stronger baseline. The matching uses only the edges among rare-type neurons; seeded graph matching, which would also align each candidate's connections to confidently typed common-type neurons, is the natural next step and was not tried. Single-neuron types are not predicted, and serial homologs in the nerve cord are not separated by the matching blocks. The recommended pipeline drops the fallback after the last test, so its all-neuron numbers come from runs reported in that test but not from a fresh one. The setting is transductive within a connectome. The size-and-agreement rule was chosen on 14 sandbox cases. Thinned copies cannot contain sub-threshold connections. Results depend on how neurons and classes are aligned across datasets.
-
 \section{Conclusion}
 
-Rare cell types, most of a fly connectome's types, can be typed without any target label by letting a transferred wiring-only GNN select the candidates and graph matching type them. The approach roughly doubles accuracy on a held-out brain (22 → 41~\%) and, with broader candidate selection, carries over to two nerve cords from a new source (40 → 61~\% and 72 → 82~\%), in pre-registered tests. It complements morphology: combined with automatic NBLAST matches, it types 73~\% of BANC's rare-type brain neurons, 6 points more than morphology alone. Candidate selection is the bottleneck, sparser reconstructions cost accuracy, and partial volumes are out of reach for wiring alone. The approach is most useful for the rare types that a labeling budget reaches last.
+Rare cell types, most of a fly connectome's types, can be typed without any target label by letting a transferred wiring-only GNN select the candidates and graph matching type them. In pre-registered tests the approach roughly doubles accuracy on a held-out brain (22 → 41~\%) and, with broader candidate selection, carries over to two nerve cords from a new source (40 → 61~\% and 72 → 82~\%). Next to morphology, wiring is an independent signal: it adds little where automatic morphology matches are good (+2.3 points on BANC's brain, short of our pre-registered bar) and a lot where they are weak (+23 points in BANC's cord). Candidate selection is the bottleneck, sparser reconstructions cost accuracy, and partial volumes are out of reach for wiring alone. The approach is most useful for the rare types that a labeling budget reaches last.
 
 \section*{Code and data availability}
 
-Code, configs, protocols and the commands for every number are in the repository (\url{https://github.com/Paradoxsmile/flybrain}; archived version: \textcolor{red}{[Zenodo DOI]}); \texttt{docs/\allowbreak{}reproduce.md} maps each table to its command and result file, and the small result summaries are committed under \texttt{results/\allowbreak{}}. Data are public (FlyWire Codex, Janelia MCNS, BANC, and the hemibrain and MANC via the BANC project's bucket). Protocols: \texttt{docs/\allowbreak{}banc\_\allowbreak{}protocol.md} (commit \texttt{85516a2}), \texttt{docs/\allowbreak{}hemibrain\_\allowbreak{}protocol.md} (\texttt{161cf7b}), \texttt{docs/\allowbreak{}banc\_\allowbreak{}rare\_\allowbreak{}protocol.md} (\texttt{0d1ee67}), \texttt{docs/\allowbreak{}vnc\_\allowbreak{}rare\_\allowbreak{}protocol.md} (\texttt{5119069}).
+Code, configs, protocols and the commands for every number are in the repository (\url{https://github.com/Paradoxsmile/flybrain}; archived version: \textcolor{red}{[Zenodo DOI]}); \texttt{docs/\allowbreak{}reproduce.md} maps each table to its command and result file, and the small result summaries are committed under \texttt{results/\allowbreak{}}. Data are public (FlyWire Codex, Janelia MCNS, BANC, and the hemibrain and MANC via the BANC project's bucket). Protocols: \texttt{docs/\allowbreak{}banc\_\allowbreak{}protocol.md} (commit \texttt{85516a2}), \texttt{docs/\allowbreak{}hemibrain\_\allowbreak{}protocol.md} (\texttt{161cf7b}), \texttt{docs/\allowbreak{}banc\_\allowbreak{}rare\_\allowbreak{}protocol.md} (\texttt{0d1ee67}), \texttt{docs/\allowbreak{}vnc\_\allowbreak{}rare\_\allowbreak{}protocol.md} (\texttt{5119069}), \texttt{docs/\allowbreak{}preregistration\_\allowbreak{}confirmatory.md} (\texttt{3949b10}).
 
 \bibliographystyle{plainnat}
 \bibliography{references}
@@ -382,7 +344,19 @@ Code, configs, protocols and the commands for every number are in the repository
 \begin{center}\Large\bfseries Supplementary material\end{center}
 \suppressfloats[t]
 
-These sections give the common-type results that Section~\ref{sec:res-common} summarizes. They use the ≥ 20 label set unless stated otherwise.
+Sections~\ref{sec:S-details}–\ref{sec:S-effort} give the details of stage 1 and the common-type results that Section~\ref{sec:res-common} summarizes; they use the 434 FlyWire types with at least 20 neurons unless stated otherwise. Section~\ref{sec:S-f1} gives macro-F1 for the rare-type tables of the main text.
+
+\section{Details of stage 1}\label{sec:S-details}
+
+\textbf{Training.} Cell types use 3 layers (300 epochs, class-weighted loss), super classes 4 layers (1,000 epochs); depth and options were chosen by validation macro-F1. With thousands of types the output layer and prior matching are computed in chunks, which reproduces the standard code where both can run.
+
+\textbf{Alignment variants.} Connectomes differ in synapse detection and completeness. Each target gets variants that align one statistic with the source by a fixed rule: \emph{unaligned} (threshold 5, nothing aligned), \emph{density-aligned} (the threshold whose connections per neuron are closest to the source's) and \emph{count-scaled} (threshold 5, counts scaled so that synapses per neuron match the source's). For MCNS against FAFB we use Janelia's published scaling factor (0.581) for the last rule. In the nerve-cord test, self-connections and connections between two neurons that pass through the neck, which in the targets can lie in the brain, are dropped in all three graphs.
+
+\textbf{Candidate preprocessings.} Each of the three alignment variants is combined with two feature normalizations (the source's training statistics or the target's own) and five strengths of prior matching, $\rho \in \{0, 0.25, 0.5, 0.75, 1\}$: 30 candidates.
+
+\textbf{Prior matching.} We rescale the class probabilities with weights $v$ (Sinkhorn iterations) so that the expected number of neurons per type matches the type distribution the same model predicts on its source, scaled to the target; $\rho$ interpolates between the raw prediction and full matching ($p_k \cdot v_k^{\rho}$, renormalized). For partial volumes, a coverage prior uses the type distribution predicted for the FAFB neurons inside the covered volume, those with at least 10~\% of their synapses outside the optic-lobe neuropils; it needs only the list of covered neuropils.
+
+\textbf{Selection rules.} The \emph{type-consistency rule}, used in the first test, picks the preprocessing whose labeling (mean over three seeds) is most self-consistent on the target: each neuron of a random half gets the label of its most similar neuron in the other half (synapses per partner type, weighted Jaccard), and agreement is chance-corrected (Cohen's κ). The \emph{size-and-agreement rule}, which replaced it after the first test and is used in all rare-type tests, takes the best mean rank of the Jensen-Shannon divergence of the predicted type sizes from the prior and the agreement between the three seeds' labelings.
 
 \section{Stage 1 within a connectome}\label{sec:S-within}
 
@@ -390,7 +364,7 @@ These sections give the common-type results that Section~\ref{sec:res-common} su
 
 \begin{figure}[tbp]
 \centering
-\includegraphics[width=0.92\linewidth]{../docs/benchmark_light.png}
+\includegraphics[width=0.92\linewidth]{figures/benchmark.pdf}
 \caption{Test accuracy on FlyWire per method and split (mean over 3 seeds, whiskers: std).}\label{fig:S-bench}
 \end{figure}
 
@@ -422,7 +396,7 @@ The result replicates within MCNS: the GNN reaches 96.6~\% (random), 95.4~\% and
 \begin{figure}[tbp]
 \centering
 \includegraphics[width=0.92\linewidth]{figures/transfer.pdf}
-\caption{Label-free transfer per scenario (accuracy on labeled target neurons). Open circles: chosen preprocessing without prior matching; filled circles: the label-free choice with prior matching; diamonds: after NTAC; triangles: the size-and-agreement rule; bars: a GNN trained with labels on the target. * pre-registered tests; their filled circles and diamonds use the rule fixed in the protocol (type consistency for BANC, size and agreement for the hemibrain).}\label{fig:S-transfer}
+\caption{Label-free transfer per scenario (accuracy on labeled target neurons). Open circles: chosen preprocessing without prior matching; filled circles: the label-free choice with prior matching; diamonds: after NTAC; squares: the size-and-agreement rule; bars: a GNN trained with labels on the target. * pre-registered tests; their filled circles and diamonds use the rule fixed in the protocol (type consistency for BANC, size and agreement for the hemibrain).}\label{fig:S-transfer}
 \end{figure}
 
 A single FlyWire GNN applied to MCNS with a label-free normalization reaches 73–75~\% on cell types; the best alignment, found only post hoc, 85.7~\%. The label-free pipeline chooses the alignment and normalization with the type-consistency rule, which ranks the 30 candidates like their accuracy (Spearman 0.95–0.97), and prior matching corrects the type sizes: 87.6~\% without and 91.2~\% with prior matching, and \textbf{92.6~\% after NTAC, over 394 cell types without a single MCNS label}, against 96.6~\% for a GNN trained on MCNS (Figure~\ref{fig:S-transfer}). Prior matching repairs the types the transfer over- or under-fills (T5a: 2,252 → 1,714 predicted neurons for 1,664 true ones; LC21: 13 → 115 for 153). Run unchanged in the reverse direction, the pipeline reaches 83.4~\% on FlyWire (72.0~\% without prior matching; 95.2~\% trained within FlyWire). The larger gap is specific to FlyWire as a target: 2.2~\% of its neurons belong to types absent from MCNS's mapping, photoreceptors cause 21~\% of the errors (51~\% correct in the left hemisphere, 83~\% in the right), and Kenyon cell subtypes 15~\%.
@@ -567,5 +541,53 @@ BANC, morphology reference & 32.8 / 0.27 & 1.3~\% & 2.3~\% \\
 By accuracy, the GNN is worth about 1.3~\% hand labels on all three references; from 2~\% on, NTAC alone is better (MCNS at 5~\%: 97.2 vs. 93.2~\%; BANC: 73.9 vs. 63.5~\%). The GNN's contribution is larger for small types: random labeling at 1~\% leaves types with fewer than 50 neurons unlabeled, which NTAC cannot assign, and GNN-seeded NTAC matches the macro-F1 that NTAC alone reaches only with 2.3–4.4 times as many hand labels. Fixed GNN seeds are the wrong way to combine both once hand labels exist, because NTAC never revises them: in the MCNS central brain, GNN-seeded NTAC gains 9 points between 1 and 50~\% hand labels, NTAC alone 27 points. The fallback variant is best at 1~\% on MCNS (94.1~\%, macro-F1 0.81) but hurts on BANC, where the transferred labels are less reliable. The rare-type pipeline was not part of this comparison.
 
 \textbf{Can one tell without labels how good a labeling is?} We fitted simple linear predictors of accuracy from the label-free properties of all 1,200 candidate labelings of the development runs and the sandbox, and tested them on BANC and the hemibrain. The pre-specified predictor (seed agreement and type-size divergence) missed by 12.8 points on average (median 8.4). It was accurate on complete targets with a non-collapsed labeling (FAFB → BANC cell types: 0.5 points). It failed when all seeds made the same error: on the collapsed MCNS → BANC labeling (predicted 44.5~\%, true 1.4~\%) and on hemibrain super classes with the FlyWire prior (seed agreement 0.94, 34.7~\% correct). Seed agreement does rank neurons and types where the transfer works: reviewing the 20~\% least-agreed neurons finds 77~\% of the errors on MCNS, 55~\% on FlyWire and 34~\% on BANC (random review: 20~\%), and per type it correlates with F1 (Spearman 0.54–0.66). On the hemibrain, where 80~\% of the labels are wrong, it is no better than random.
+
+\section{Macro-F1 of the rare-type results}\label{sec:S-f1}
+
+\begin{table}[htbp]
+\centering
+\footnotesize
+\caption{Macro-F1 (mean F1 over the true types present) for the rare-type tables of the main text; accuracies are given there. –: not run.}\label{tab:S-f1}
+\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.46\linewidth}CCC}
+\toprule
+\multicolumn{4}{l}{\emph{Table~\ref{tab:dev}, development}} \\
+ & FlyWire left → right & FlyWire → MCNS & \\
+\midrule
+Stage 1 & 0.78 & 0.49 & \\
+Stage-1 probabilities, one-to-one & – & 0.62 & \\
+Two-stage, strict candidates & 0.88 & 0.78 & \\
+Two-stage, broad candidates & – & 0.83 & \\
+GNN votes, one-to-one (oracle candidates) & 0.81 & – & \\
+Graph matching, ipsilateral (oracle candidates) & 0.92 & – & \\
+Graph matching (oracle candidates) & 0.93 & 0.87 & \\
+\midrule
+\multicolumn{4}{l}{\emph{Table~\ref{tab:test}, pre-registered tests}} \\
+ & BANC brain & BANC cord & MCNS cord \\
+\midrule
+Stage 1 & 0.19 & 0.36 & 0.70 \\
+Two-stage, strict candidates & 0.47 & 0.55 & 0.79 \\
+Two-stage, broad candidates & 0.57 & 0.61 & 0.82 \\
+Oracle candidates & 0.70 & 0.73 & 0.86 \\
+\midrule
+\multicolumn{4}{l}{\emph{Table~\ref{tab:cand}, candidate selection}} \\
+ & MCNS thinned & MCNS full & \\
+\midrule
+Strict & 0.53 & 0.78 & \\
+Broad & 0.65 & 0.83 & \\
+Oracle & 0.84 & 0.87 & \\
+\midrule
+\multicolumn{4}{l}{\emph{Table~\ref{tab:morph}, wiring and morphology}} \\
+ & BANC brain & BANC cord & \\
+\midrule
+NBLAST alone & 0.65 & 0.29 & \\
+Two-stage, broad candidates & 0.57 & 0.61 & \\
+Two-stage, morphology-augmented candidates & 0.67 & 0.63 & \\
+Combination, broad candidates & 0.68 & 0.59 & \\
+Combination, morphology-augmented candidates & 0.71 & 0.61 & \\
+Two-stage, seeded & 0.65 & 0.53 & \\
+Combination, seeded (pre-registered) & 0.69 & 0.51 & \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
 \end{document}

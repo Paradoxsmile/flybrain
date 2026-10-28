@@ -1,6 +1,6 @@
 # Reproducing the numbers
 
-Every table and figure of the paper ([paper/main.pdf](../paper/main.pdf), source `paper/main.tex`, v0.4; supplementary tables S1-S6 and figures S1-S5 at its end), with the commands that produce it and the file the numbers are read from. Table 2 of the paper maps its names to the code options used here: strict candidates = `--candidates gnn`, broad candidates = `--candidates union`, morphology-augmented candidates = `--candidates file:nblast_union`, type-consistency rule = `--select consistency`, size-and-agreement rule = `--select size_agreement`, coarse fallback = `--fallback`, neck block = `--passing-block`; the alignment variants unaligned / density-aligned / count-scaled are `raw` / `density` / `scaled` (`janelia` for MCNS).
+Every table and figure of the paper ([paper/main.pdf](../paper/main.pdf), source `paper/main.tex`, v0.5; supplementary tables S1-S7 and figures S1-S5 at its end), with the commands that produce it and the file the numbers are read from. Table 2 of the paper defines its names; the code options are: strict candidates = `--candidates gnn`, broad candidates = `--candidates union`, morphology-augmented candidates = `--candidates file:nblast_union`, oracle candidates = `--candidates oracle`, type-consistency rule = `--select consistency`, size-and-agreement rule = `--select size_agreement`, coarse fallback = `--fallback`, neck block = `--passing-block`, seeded matching = `S/seeded_matching.py`; alignment reference = "reference A" and second reference = "reference B" in the result files; the alignment variants unaligned / density-aligned / count-scaled are `raw` / `density` / `scaled` (`janelia` for MCNS).
 
 ## Setup
 
@@ -9,38 +9,39 @@ Every table and figure of the paper ([paper/main.pdf](../paper/main.pdf), source
 - `S` below stands for `experiments/b_gnn_celltypes`.
 - **Hardware.** GNN training for the benchmark, the transfer and the type-size sweep ran on a Kaggle T4 GPU; everything else ran on a CPU. CUDA is used automatically when available.
 - **What is committed.** The summaries of the reported runs are in the repository: `results/*/summary.md` or `SUMMARY.md`, every `metrics.csv`, `results/vnc_rare/report.json` and `results/selection_rules_*.md`. Models, predictions and matchings (about 1.6 GB) are not committed; the commands below regenerate them.
-- **Order.** Later steps read earlier outputs: label-free runs need the saved GNNs, graph matching needs a stage-1 run, `stratify.py` and `label_effort.py` need the label-free runs. The stage-1 runs of the rare-type pipeline come from the type-size sweep (Supplement S2 below).
-- **Protocols.** The four pre-registered tests (Table 9) list their own commands, in the order they were run: [banc_protocol.md](banc_protocol.md), [hemibrain_protocol.md](hemibrain_protocol.md), [banc_rare_protocol.md](banc_rare_protocol.md) and [vnc_rare_protocol.md](vnc_rare_protocol.md).
+- **Order.** Later steps read earlier outputs: label-free runs need the saved GNNs, graph matching needs a stage-1 run, `stratify.py` and `label_effort.py` need the label-free runs. The stage-1 runs of the rare-type pipeline come from the type-size sweep (Supplement S3 below).
+- **Protocols.** The five pre-registered tests (Table 7) list their own commands, in the order they were run: [banc_protocol.md](banc_protocol.md), [hemibrain_protocol.md](hemibrain_protocol.md), [banc_rare_protocol.md](banc_rare_protocol.md), [vnc_rare_protocol.md](vnc_rare_protocol.md) and [preregistration_confirmatory.md](preregistration_confirmatory.md).
 
 ## Section 4.1: rare types on development data, within FlyWire and FAFB → MCNS
 
 | Paper | Commands | Numbers in |
 |---|---|---|
-| Table 3 | `S/graph_matching.py` (oracle candidates, both edge sets); `S/graph_matching.py --candidates gnn` (label-free two-stage). Needs the `size_threshold` m2 left → right runs. | `results/graph_matching/SUMMARY.md`, `metrics.csv` |
-| Table 4 | `S/graph_matching_mcns.py --stage weights`; then `--stage match` (barycenter start, strict candidates), `--stage match --start soft` and `--stage match --candidates oracle`. Needs `size_threshold/m2/label_free`. | `results/graph_matching_mcns/SUMMARY.md`, `metrics.csv` |
+| Table 3, left → right column | `S/graph_matching.py` (oracle candidates, both edge sets); `S/graph_matching.py --candidates gnn` (label-free two-stage). Needs the `size_threshold` m2 left → right runs. | `results/graph_matching/SUMMARY.md`, `metrics.csv`, `two_stage.csv` |
+| Table 3, FlyWire → MCNS column | `S/graph_matching_mcns.py --stage weights`; then `--stage match` (barycenter start, strict candidates), `--stage match --start soft` and `--stage match --candidates oracle`. Needs `size_threshold/m2/label_free`. Broad candidates: see Table 5. | `results/graph_matching_mcns/SUMMARY.md`, `metrics.csv`; `results/graph_matching_mcns_cand/metrics.csv` |
 
-## Sections 4.2-4.5: pre-registered rare-type tests, candidate selection, morphology
-
-| Paper | Commands | Numbers in |
-|---|---|---|
-| Table 5 (BANC brain, Section 4.2) | `S/size_threshold.py --min-sizes 2 --stages label_free --target banc --select size_agreement`; `S/graph_matching_mcns.py --target banc --stage match`, the same with `--candidates oracle`, and with `--variant raw` / `--variant scaled` | `results/graph_matching_banc/SUMMARY.md`, `metrics.csv` |
-| Table 6 (candidate selection, development, Section 4.3) | Run table R1–R14 in [candidate_selection_plan.md](candidate_selection_plan.md). The steps: `S/candidate_selection.py --stage mass`, `--stage select`, `--stage twotier`. The 25 % sandbox stage 1: `S/size_threshold.py --min-sizes 2 --stages label_free --select size_agreement --target-retention 0.25` (and `--min-sizes 10` for the coarse fallback; `--retention-seed 3` for the second realization). The matching: `S/graph_matching_mcns.py --stage match --stage1 label_free_mcns_r0.25_size_agreement --out graph_matching_mcns_r0.25` with `--candidates gnn`, `union`, `file:mass_fill` (written by `--stage select`) and `oracle`; the second realization with `--stage1 label_free_mcns_r0.25_seed3_size_agreement --out graph_matching_mcns_r0.25_seed3`. Full MCNS broad candidates: `--candidates union --out graph_matching_mcns_cand`. Many-to-one: `--candidates oracle --capacity 2 --out graph_matching_mcns_cap`. | `results/candidate_selection/SUMMARY.md`; `results/graph_matching_mcns_{r0.25,r0.25_seed3,cand,cap}/metrics.csv` |
-| Table 7 (nerve cords, Section 4.4) | For `t` in `banc_cord mcns_cord`: `S/size_threshold.py --source manc --min-sizes 2 --stages within` (MANC GNNs; also `--min-sizes 10`), then the seven runs of [vnc_rare_protocol.md](vnc_rare_protocol.md) ("Runs"); `S/vnc_report.py` collects them | `results/vnc_rare/SUMMARY.md`, `report.json`; `results/graph_matching_{banc,mcns}_cord*/metrics.csv` |
-| Tables 5 and 7, intervals | `S/bootstrap_ci.py` (needs the saved stage-1 predictions and matchings) | `results/bootstrap_ci/SUMMARY.md`, `metrics.csv` |
-| Table 8 (morphology, exploratory, Section 4.5; [finalize_plan.md](finalize_plan.md) A1–A2) | The five commands in `results/morphology_baseline/SUMMARY.md` ("Commands"): `S/morphology_baseline.py --candidates-out`, three `S/graph_matching_mcns.py` runs into `morphology_baseline/gm_banc*`, then `S/morphology_baseline.py` | `results/morphology_baseline/SUMMARY.md`, `metrics.csv`, `gm_banc*/metrics.csv` |
-| Confirmatory test, seeded matching (pre-registered: [preregistration_confirmatory.md](preregistration_confirmatory.md)) | `S/seeded_matching.py --stage seeds`; `--stage match --targets banc_cord`; `--stage match --targets banc`; `--stage score`. Needs the stage-1 runs and the unseeded A2-ii matchings of Table 8 | `results/seeded_matching/SUMMARY.md`, `metrics.csv`, `delta.csv`, `decision.json` |
-| Figure 1 (rare types) | `python paper/make_figures.py` (needs the results of Tables 4, 5, 7 and 8 and `S/bootstrap_ci.py`) | `paper/figures/rare_types.png` |
-
-## Section 4.6 and Supplement S1: stage 1 within a connectome
+## Sections 4.2-4.4: pre-registered rare-type tests, candidate selection, morphology
 
 | Paper | Commands | Numbers in |
 |---|---|---|
-| Table S1, Figure S1 | `S/benchmark.py`; then `S/plot_benchmark.py` for the figure. Baselines at commit `2000b7b`, NTAC at `bfbd103`, GNN rows at `343125f`. The run can be split with `--labels` / `--methods`. | `results/benchmark/summary.md`; `docs/benchmark_{light,dark}.png` |
+| Table 4, BANC brain column (Section 4.2) | `S/size_threshold.py --min-sizes 2 --stages label_free --target banc --select size_agreement`; `S/graph_matching_mcns.py --target banc --stage match`, the same with `--candidates oracle`, and with `--variant raw` / `--variant scaled` | `results/graph_matching_banc/SUMMARY.md`, `metrics.csv` |
+| Table 5 (candidate selection, development, Section 4.3) | Run table R1–R14 in [candidate_selection_plan.md](candidate_selection_plan.md). The steps: `S/candidate_selection.py --stage mass`, `--stage select`, `--stage twotier`. The 25 % sandbox stage 1: `S/size_threshold.py --min-sizes 2 --stages label_free --select size_agreement --target-retention 0.25` (and `--min-sizes 10` for the coarse fallback; `--retention-seed 3` for the second realization). The matching: `S/graph_matching_mcns.py --stage match --stage1 label_free_mcns_r0.25_size_agreement --out graph_matching_mcns_r0.25` with `--candidates gnn`, `union`, `file:mass_fill` (written by `--stage select`) and `oracle`; the second realization with `--stage1 label_free_mcns_r0.25_seed3_size_agreement --out graph_matching_mcns_r0.25_seed3`. Full MCNS broad candidates: `--candidates union --out graph_matching_mcns_cand`. Many-to-one: `--candidates oracle --capacity 2 --out graph_matching_mcns_cap`. | `results/candidate_selection/SUMMARY.md`; `results/graph_matching_mcns_{r0.25,r0.25_seed3,cand,cap}/metrics.csv` |
+| Table 4, nerve-cord columns (Section 4.2) | For `t` in `banc_cord mcns_cord`: `S/size_threshold.py --source manc --min-sizes 2 --stages within` (MANC GNNs; also `--min-sizes 10`), then the seven runs of [vnc_rare_protocol.md](vnc_rare_protocol.md) ("Runs"); `S/vnc_report.py` collects them | `results/vnc_rare/SUMMARY.md`, `report.json`; `results/graph_matching_{banc,mcns}_cord*/metrics.csv` |
+| Table 4, intervals and gains | `S/bootstrap_ci.py` (needs the saved stage-1 predictions and matchings) | `results/bootstrap_ci/SUMMARY.md`, `metrics.csv` |
+| Table 6, upper rows and BANC-brain broad candidates of Table 4 (morphology, exploratory, Section 4.4; [finalize_plan.md](finalize_plan.md) A1–A2) | The five commands in `results/morphology_baseline/SUMMARY.md` ("Commands"): `S/morphology_baseline.py --candidates-out`, three `S/graph_matching_mcns.py` runs into `morphology_baseline/gm_banc*`, then `S/morphology_baseline.py` | `results/morphology_baseline/SUMMARY.md`, `metrics.csv`, `gm_banc*/metrics.csv` |
+| Table 6, seeded-matching rows, and Figure 2 (pre-registered: [preregistration_confirmatory.md](preregistration_confirmatory.md)) | `S/seeded_matching.py --stage seeds`; `--stage match --targets banc_cord`; `--stage match --targets banc`; `--stage score`. Needs the stage-1 runs and the unseeded A2-ii matchings of the row above | `results/seeded_matching/SUMMARY.md`, `metrics.csv`, `delta.csv`, `decision.json` |
+| Figures 1 and 2 | `python paper/make_figures.py` (needs the results of Tables 3–6 and `S/bootstrap_ci.py`) | `paper/figures/rare_types.png`, `paper/figures/morphology.png` |
+| Table S7 (macro-F1 of Tables 3–6) | the runs above | the same `metrics.csv` files (`macro_f1` column) |
+
+## Section 4.5 and Supplement S2: stage 1 within a connectome
+
+| Paper | Commands | Numbers in |
+|---|---|---|
+| Table S1, Figure S1 | `S/benchmark.py`; then `paper/make_figures.py` for the figure (`S/plot_benchmark.py` draws the README version). Baselines at commit `2000b7b`, NTAC at `bfbd103`, GNN rows at `343125f`. The run can be split with `--labels` / `--methods`. | `results/benchmark/summary.md`; `paper/figures/benchmark.png`, `docs/benchmark_{light,dark}.png` |
 | MCNS replication | `S/benchmark.py --dataset mcns` (at `4ec2a8a`) | `results/benchmark_mcns/summary.md` |
 | GNN-seeded NTAC | `S/hybrid.py` (needs the benchmark and transfer runs) | `results/hybrid/summary.md` |
 | Ablations (README) | `S/ablation.py --label-col cell_type --min-class-size 20` and `--label-col super_class`, each also with `--split left_right` / `right_left` | `results/ablation_*/summary.csv` (not committed) |
 
-## Section 4.6 and Supplement S2: stage 1 between complete connectomes
+## Section 4.5 and Supplement S3: stage 1 between complete connectomes
 
 | Paper | Commands | Numbers in |
 |---|---|---|
@@ -52,7 +53,7 @@ Every table and figure of the paper ([paper/main.pdf](../paper/main.pdf), source
 | Region and type-size breakdown, Figure S3 | `S/stratify.py` | `results/stratified/summary.md`; `paper/figures/type_f1.png` |
 | Table S2 (minimum type size; the ≥ 2 run is stage 1 of the rare-type pipeline) | `S/size_threshold.py --min-sizes 20 10 5 3 2`. The `within` stage trains the GNNs (GPU; lean training below 5), `label_free` runs the transfer (CPU; lean below 5) and `report` writes the tables. Stages can be run separately with `--stages`. | `results/size_threshold/SUMMARY.md` |
 
-## Section 4.6 and Supplement S3: sparse and partial targets
+## Section 4.5 and Supplement S4: sparse and partial targets
 
 | Paper | Commands | Numbers in |
 |---|---|---|
@@ -64,7 +65,7 @@ Every table and figure of the paper ([paper/main.pdf](../paper/main.pdf), source
 | Partial-volume sandbox | `S/label_free.py --target mcns --target-coverage central_brain --target-crop 0.16`, the same with `--prior em`, and with `--coverage central_brain --prior coverage --out label_free_partial_covnorm`; without the crop: `--target-coverage central_brain --coverage central_brain --prior coverage --out label_free_partial_covnorm_nocrop` | `results/label_free_fafb_mcns_r1_central_brain_crop0.16*/summary.md`, `results/label_free_partial_covnorm*/summary.md` |
 | Table S5 (hemibrain) | `S/label_free.py --target hemibrain --coverage central_brain --prior coverage --select size_agreement --out label_free_hemibrain`; FlyWire prior: the same with `--prior source --out label_free_hemibrain_source_prior` | `results/label_free_hemibrain/summary.md`, `results/label_free_hemibrain_source_prior/summary.md` |
 
-## Section 4.6 and Supplement S4: hand labels and accuracy estimation
+## Section 4.5 and Supplement S5: hand labels and accuracy estimation
 
 | Paper | Commands | Numbers in |
 |---|---|---|

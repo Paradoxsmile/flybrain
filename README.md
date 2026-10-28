@@ -5,9 +5,9 @@
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](pyproject.toml)
 [![Data: FlyWire FAFB v783](https://img.shields.io/badge/data-FlyWire%20FAFB%20v783-lightgrey.svg)](https://codex.flywire.ai)
 
-Typing the neurons of an unlabeled *Drosophila* connectome from wiring alone. A graph neural network sees only anonymous connectivity, never a partner's label, and is transferred from an annotated connectome to a new one without any target label. For the rarest cell types (2–4 neurons, about three quarters of FlyWire's types), the transferred GNN selects the candidate neurons and graph matching against the reference types them. The approach was tested on five connectomes, four of them under protocols committed before any run.
+Typing the neurons of an unlabeled *Drosophila* connectome from wiring alone. A graph neural network sees only anonymous connectivity, never a partner's label, and is transferred from an annotated connectome to a new one without any target label. For the rarest cell types (2–4 neurons, about three quarters of FlyWire's types), the transferred GNN selects the candidate neurons and graph matching against the reference types them. The approach was tested on five connectomes under five protocols committed before the runs they cover.
 
-Paper: [paper/main.pdf](paper/main.pdf) (LaTeX source `paper/main.tex`; build with `latexmk -pdf main.tex` in `paper/`). Every experiment in detail: [docs/results.md](docs/results.md). Command and result file for every number: [docs/reproduce.md](docs/reproduce.md). Table 2 of the paper defines the names of the pipeline's variants and maps them to the code options.
+Paper: [paper/main.pdf](paper/main.pdf) (LaTeX source `paper/main.tex`; build with `latexmk -pdf main.tex` in `paper/`). Every experiment in detail: [docs/results.md](docs/results.md). Command and result file for every number: [docs/reproduce.md](docs/reproduce.md). Table 2 of the paper defines the names of the pipeline's variants; the reproduction map gives their code options.
 
 ## Main results
 
@@ -17,13 +17,13 @@ Paper: [paper/main.pdf](paper/main.pdf) (LaTeX source `paper/main.tex`; build wi
 |---|---|---|---|---|
 | FlyWire left → right hemisphere | 78.9 | 85.8 | 92.2 | development |
 | FlyWire → male CNS (MCNS) brain | 54.2 | 74.5; 81.6 with broad candidates | 85.3 | development |
-| **FlyWire → BANC brain** | **22.2** | **41.3** (morphology reference: 40.6) | 65.9 | [protocol](docs/banc_rare_protocol.md) |
-| **MANC → BANC nerve cord** | **39.5** | **61.0** with broad candidates (curated reference: 61.0) | 75.5 | [protocol](docs/vnc_rare_protocol.md) |
+| **FlyWire → BANC brain** | **22.2** | **41.3**; 51.2 with broad candidates (exploratory) | 65.9 | [protocol](docs/banc_rare_protocol.md) |
+| **MANC → BANC nerve cord** | **39.5** | **61.0** with broad candidates | 75.5 | [protocol](docs/vnc_rare_protocol.md) |
 | **MANC → MCNS nerve cord** | **72.0** | **82.2** with broad candidates | 87.0 | [protocol](docs/vnc_rare_protocol.md) |
 
-The left → right stage 1 is the GNN's majority vote over three seeds. Of the pre-registered expectations, all four held on the BANC brain and two of four on both nerve cords. A gain of +15 points was out of reach on MCNS, whose stage 1 is already at 72 %. Broad candidates take every neuron whose stage-1 type is rare before or after NTAC; the pre-registered BANC-brain test used the stricter first rule (after NTAC only). A coarse fallback that had helped on the brain lowered accuracy on both cords and was dropped.
+The left → right stage 1 is the GNN's majority vote over three seeds. Of the pre-registered expectations, all four held on the BANC brain and two of four on both nerve cords. A gain of +15 points was out of reach on MCNS, whose stage 1 is already at 72 %. Broad candidates take every neuron whose stage-1 type is rare before or after NTAC; the pre-registered BANC-brain test used the stricter first rule (after NTAC only). A coarse fallback that had helped on the brain lowered accuracy on both cords and was dropped. BANC's second references (morphology-matched brain types, curated cord types) give the same numbers, but for rare types they agree with the main references on 98–99.5 % of neurons, so they are not independent checks.
 
-**Wiring adds to morphology** (exploratory, [details](results/morphology_baseline/SUMMARY.md)). On the BANC brain's rare types, BANC's automatic NBLAST matches alone reach 66.5 %, wiring alone 51.2 %, and the matched type where graph matching assigns a neuron, NBLAST elsewhere, 72.5 % (+6.0 points, 95 % interval 5.1–7.1). In the nerve cord, where raw NBLAST is weak, the combination reaches 64.9 %.
+**Wiring next to morphology: a small gain on the brain, a large one in the cord.** A pre-registered test ([protocol](docs/preregistration_confirmatory.md), [results](results/seeded_matching/SUMMARY.md)) combined seeded graph matching with BANC's automatic NBLAST matches (the matched type where the matching assigns one, NBLAST's type elsewhere). On the BANC brain's rare types the combination reached 68.7 % against 66.5 % for NBLAST alone: **+2.3 points (95 % CI 1.3–3.2), below the pre-registered 3-point bar**, so the exploratory +6.0 ([details](results/morphology_baseline/SUMMARY.md), best of six combinations) is not confirmed. In the nerve cord, where automatic NBLAST matches are weak (30.5 %), the combination gained 23.2 points (21.8–24.5). Seeding itself hurt (unseeded combination: 70.6 % brain, 65.1 % cord). BANC's reference types come from reviewed NBLAST matches: NBLAST is "right" on 99.9 % of the neurons where reviewers kept its top hit and on 12.0 % where they replaced it, so comparisons against NBLAST on BANC favour NBLAST.
 
 **Common types: wiring alone, and label-free transfer.** Cell types with ≥ 20 FlyWire neurons (434 types), accuracy %:
 
@@ -85,14 +85,14 @@ FlyWire (FAFB v783), MCNS v1.0, BANC v888, the hemibrain v1.2.1 and MANC v1.2.1 
 |---|---|
 | `flybrain/` | data loading (`loading.py`, `mcns.py`, `banc.py`, `hemibrain.py`, `manc.py`), model and training, prior matching (`adapt.py`), label-free scores (`consistency.py`, `selection.py`, `coverage.py`), NTAC, thinning |
 | `experiments/b_gnn_celltypes/` | one script per experiment: benchmark and baselines, transfer, label-free transfer, type-size sweep, graph matching, candidate selection, labeling effort, accuracy estimation, nerve-cord test |
-| `docs/` | [results in detail](docs/results.md), [reproduction map](docs/reproduce.md), the four protocols, development plans, [literature](docs/literature.md) |
+| `docs/` | [results in detail](docs/results.md), [reproduction map](docs/reproduce.md), the five protocols, development plans, [literature](docs/literature.md) |
 | `paper/` | the paper (`main.tex`, `references.bib`, built `main.pdf`, supplement included) and its figures (`make_figures.py`) |
 | `results/` | committed summaries of the reported runs |
 | `tests/` | unit and smoke tests (`uv run pytest`) |
 
 ## Limitations
 
-- **Circularity.** Cell types were defined partly from connectivity, and most cross-dataset references come from matching that uses connectivity. The GNN never sees partner identities, which weakens but does not remove this concern. The rare-type gain is the same against BANC's morphology-matched and curated references.
+- **Circularity.** Cell types were defined partly from connectivity, and every cross-dataset reference comes from matching that uses connectivity, morphology or both. The GNN never sees partner identities, which weakens but does not remove this concern. BANC's second references nearly coincide with its main ones for rare types, and BANC's NBLAST-based labels favour NBLAST in the morphology comparison.
 - **Scope of the rare-type tests.** The rare-type pipeline was developed on one brain pair and tested on one held-out brain and two nerve cords. Single-neuron types are not predicted. The matching is one-to-one, while type sizes differ between animals.
 - **Label-free transfer.** It was developed on FlyWire → MCNS while looking at its errors. It degrades with reconstruction density and fails for partial volumes. Run-level accuracy cannot be estimated without labels.
 - **Setting.** It is transductive within a connectome. Most common-type results use types with ≥ 20 FlyWire neurons; we recommend ≥ 10 for new results.
