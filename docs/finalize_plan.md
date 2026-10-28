@@ -47,7 +47,7 @@ Outputs: `experiments/b_gnn_celltypes/morphology_baseline.py`, `results/morpholo
 
 ## Done when
 
-- [ ] A1-A2 results are committed and A4's framing is applied to the abstract.
+- [x] A1-A2 results are committed and A4's framing is applied to the abstract.
 - [ ] No `[bracket]` items remain in `paper/draft.md`; references are complete.
 - [ ] CIs are in Tables 6 and 8.
 - [ ] `v1.0` is tagged, the Zenodo DOI is in place and the preprint is posted.
