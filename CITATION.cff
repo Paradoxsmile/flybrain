@@ -1,11 +1,15 @@
 cff-version: 1.2.0
-message: "If you use this software, please cite it as below. Please also cite the FlyWire / FAFB data and the cell-type annotations it builds on."
-title: "flybrain: ML on the Drosophila connectome"
+message: "If you use this software, please cite it as below. Please also cite the connectome data (FlyWire / FAFB, MCNS, BANC, hemibrain, MANC) and the cell-type annotations it builds on."
+title: "flybrain: label-free cell typing across fly connectomes from wiring alone"
 abstract: >-
-  Graph neural networks on the FlyWire (FAFB v783) whole-brain connectome of
-  Drosophila. A GNN that sees only anonymous wiring structure predicts super
-  classes and 434 cell types, compared with baselines that use the labels of
-  synaptic partners, including a test on an unlabeled brain hemisphere.
+  Cell typing of Drosophila connectomes from anonymous wiring, without labels
+  in the target. A directed graph neural network that sees only connectivity
+  types common cell types within FlyWire (FAFB v783) and, with prior matching
+  of type sizes and label-free model selection, transfers to other
+  connectomes (male CNS, BANC, hemibrain). For the rarest types, the
+  transferred GNN selects candidate neurons and graph matching against the
+  reference types them; this was tested under pre-registered protocols on the
+  BANC brain and, from MANC, on the nerve cords of BANC and the male CNS.
 authors:
   - family-names: Vogt
     given-names: Maximilian
@@ -15,5 +19,8 @@ keywords:
   - connectomics
   - Drosophila
   - FlyWire
-  - graph neural networks
   - cell types
+  - graph neural networks
+  - graph matching
+  - domain adaptation
+  - pre-registration

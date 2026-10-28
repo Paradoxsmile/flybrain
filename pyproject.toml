@@ -1,7 +1,7 @@
 [project]
 name = "flybrain"
 version = "0.1.0"
-description = "ML on the Drosophila connectome: GNN cell-type prediction (FlyWire/MCNS) and connectome-constrained models."
+description = "Label-free cell typing across Drosophila connectomes from wiring alone: a wiring-only GNN and graph matching."
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 license = { text = "MIT" }

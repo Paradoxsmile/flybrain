@@ -6,9 +6,16 @@ data/processed/
 checkpoints/
 *.pt
 *.pth
-# results (keep the folder, ignore run outputs)
-results/*
+# results: ignore run outputs, keep the small summaries of reported runs
+results/**
+!results/**/
 !results/.gitkeep
+!results/*/summary.md
+!results/*/SUMMARY.md
+!results/**/metrics.csv
+!results/vnc_rare/report.json
+!results/selection_rules_*.md
+results/pytest_*/**
 # python
 .venv/
 __pycache__/
