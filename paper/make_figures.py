@@ -3,7 +3,7 @@
   rare_types.png / .pdf main figure: the two-stage pipeline and its accuracy on rare types
                         per source -> target pair, with the morphology rows
   transfer.png / .pdf   label-free transfer per scenario: without prior matching, the
-                        label-free choice, + NTAC, the revised selection rule, and the
+                        label-free choice, + NTAC, the size-and-agreement rule, and the
                         accuracy of a GNN trained with labels on the target
   thinning.png / .pdf   transfer between thinned FAFB copies (source x target density), with
                         prior matching, and the density-augmented GNN
@@ -27,8 +27,9 @@ RESULTS = REPO_ROOT / "results"
 INK, INK2, MUTED, GRID, AXIS = "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#c3c2b7"
 BLUE, ORANGE, GREEN = "#2a78d6", "#eb6834", "#1baf7a"
 
-# (row label, run of the reported pipeline, run with the label-free columns for the revised
-# rule, accuracy % of a GNN trained with labels on the target (README), pre-registered)
+# (row label, run of the reported pipeline, run with the label-free columns for the
+# size-and-agreement rule, accuracy % of a GNN trained with labels on the target (README),
+# pre-registered)
 SCENARIOS = [
     (
         "FAFB → MCNS",
@@ -110,7 +111,7 @@ def transfer_figure(out: Path) -> None:
         ),
         plt.Line2D([], [], ls="", marker="o", ms=8, color=BLUE, label="label-free choice"),
         plt.Line2D([], [], ls="", marker="D", ms=7, color=ORANGE, label="+ NTAC"),
-        plt.Line2D([], [], ls="", marker="^", ms=8, color=GREEN, label="revised selection rule"),
+        plt.Line2D([], [], ls="", marker="^", ms=8, color=GREEN, label="size-and-agreement rule"),
         plt.Line2D(
             [], [], ls="", marker="|", ms=14, mew=2, color=INK2, label="trained with target labels"
         ),
@@ -323,14 +324,14 @@ def rare_figure(out: Path) -> None:
             mfc="white",
             mec=BLUE,
             ms=7,
-            label="Two-stage, first candidate rule (pre-registered)",
+            label="Two-stage, strict candidates (pre-registered)",
         ),
         "two-stage": dict(
-            marker="o", mfc=BLUE, mec=BLUE, ms=8, label="Two-stage (wiring only, label-free)"
+            marker="o", mfc=BLUE, mec=BLUE, ms=8, label="Two-stage (broad candidates where run)"
         ),
         "NBLAST": dict(marker="X", mfc=ORANGE, mec=ORANGE, ms=7, label="NBLAST (morphology only)"),
         "matched, else NBLAST": dict(
-            marker="^", mfc=GREEN, mec=GREEN, ms=8, label="Matched type, else NBLAST"
+            marker="^", mfc=GREEN, mec=GREEN, ms=8, label="Matching-first combination"
         ),
         "oracle": dict(
             marker="D", mfc=INK2, mec=INK2, ms=5.5, label="Oracle candidates (uses labels)"
