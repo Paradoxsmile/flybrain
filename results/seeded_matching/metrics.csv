@@ -1,0 +1,85 @@
+target,reference,method,subset,n,types,acc,macro_f1
+banc,ref A,stage 1 (label-free GNN),2-4,14512,5416,0.2220231532524807,0.1892958189677258
+banc,ref A,stage 1 (label-free GNN),"2-4, seeds",5362,3756,0.25811264453562105,0.2002310089207353
+banc,ref A,stage 1 (label-free GNN),"2-4, not seeds",9150,4187,0.20087431693989072,0.18953798888431023
+banc,ref A,stage 1 (label-free GNN),"2-4, NBLAST hit kept by review",9002,4629,0.22383914685625417,0.1910781004617618
+banc,ref A,stage 1 (label-free GNN),"2-4, NBLAST hit overridden by review",4331,2935,0.19764488570768876,0.17061309104729427
+banc,ref A,stage 1 (label-free GNN),all labeled,88639,7380,0.47885242387662313,0.19422302407557718
+banc,ref A,NBLAST,2-4,14512,5416,0.664622381477398,0.6465571099847796
+banc,ref A,NBLAST,"2-4, seeds",5362,3756,0.844834017157777,0.7278201884791794
+banc,ref A,NBLAST,"2-4, not seeds",9150,4187,0.559016393442623,0.5908321547760483
+banc,ref A,NBLAST,"2-4, NBLAST hit kept by review",9002,4629,0.9991113085980893,0.744877903567525
+banc,ref A,NBLAST,"2-4, NBLAST hit overridden by review",4331,2935,0.11983375663818979,0.5200218294717501
+banc,ref A,NBLAST,all labeled,88639,7380,0.563769898126107,0.6609218039139652
+banc,ref A,two-stage [unseeded],2-4,14512,5416,0.6258269018743109,0.6698709610389699
+banc,ref A,two-stage [unseeded],"2-4, seeds",5362,3756,0.7814248414770608,0.7200911953220357
+banc,ref A,two-stage [unseeded],"2-4, not seeds",9150,4187,0.5346448087431694,0.6542769258713698
+banc,ref A,two-stage [unseeded],"2-4, NBLAST hit kept by review",9002,4629,0.6634081315263275,0.682091498869623
+banc,ref A,two-stage [unseeded],"2-4, NBLAST hit overridden by review",4331,2935,0.5652274301546987,0.6516743029829695
+banc,ref A,two-stage [unseeded],all labeled,88639,7380,0.541082367806496,0.5492929287253518
+banc,ref A,"two-stage matched, else NBLAST [unseeded]",2-4,14512,5416,0.7056918412348401,0.711694685282866
+banc,ref A,"two-stage matched, else NBLAST [unseeded]","2-4, seeds",5362,3756,0.8259977620290936,0.7566283908152398
+banc,ref A,"two-stage matched, else NBLAST [unseeded]","2-4, not seeds",9150,4187,0.6351912568306011,0.7007313203425957
+banc,ref A,"two-stage matched, else NBLAST [unseeded]","2-4, NBLAST hit kept by review",9002,4629,0.7797156187513886,0.7303479826756029
+banc,ref A,"two-stage matched, else NBLAST [unseeded]","2-4, NBLAST hit overridden by review",4331,2935,0.5730778111290695,0.6911483713192796
+banc,ref A,"two-stage matched, else NBLAST [unseeded]",all labeled,88639,7380,0.6116494996559076,0.6938687887157474
+banc,ref A,two-stage [seeded],2-4,14512,5416,0.6161797133406836,0.653337672596525
+banc,ref A,two-stage [seeded],"2-4, seeds",5362,3756,0.844834017157777,0.7186353504153031
+banc,ref A,two-stage [seeded],"2-4, not seeds",9150,4187,0.48218579234972675,0.6283642426240812
+banc,ref A,two-stage [seeded],"2-4, NBLAST hit kept by review",9002,4629,0.7406131970673183,0.6923923045236383
+banc,ref A,two-stage [seeded],"2-4, NBLAST hit overridden by review",4331,2935,0.38697760332486725,0.578215074832753
+banc,ref A,two-stage [seeded],all labeled,88639,7380,0.5396608716253568,0.5372961324875292
+banc,ref A,"two-stage matched, else NBLAST [seeded]",2-4,14512,5416,0.6872932745314223,0.688636615419443
+banc,ref A,"two-stage matched, else NBLAST [seeded]","2-4, seeds",5362,3756,0.844834017157777,0.7415584342076884
+banc,ref A,"two-stage matched, else NBLAST [seeded]","2-4, not seeds",9150,4187,0.5949726775956284,0.6725289558737416
+banc,ref A,"two-stage matched, else NBLAST [seeded]","2-4, NBLAST hit kept by review",9002,4629,0.8454787824927794,0.7325029435216937
+banc,ref A,"two-stage matched, else NBLAST [seeded]","2-4, NBLAST hit overridden by review",4331,2935,0.3909027938120526,0.6137858095619743
+banc,ref A,"two-stage matched, else NBLAST [seeded]",all labeled,88639,7380,0.6101039046018119,0.678510662233042
+banc,ref B,stage 1 (label-free GNN),2-4,13848,5169,0.21338821490467938,0.18096859278893573
+banc,ref B,NBLAST,2-4,13848,5169,0.6681109185441941,0.6500226685123368
+banc,ref B,two-stage [unseeded],2-4,13848,5169,0.6223281340265743,0.6681332960925211
+banc,ref B,"two-stage matched, else NBLAST [unseeded]",2-4,13848,5169,0.6998844598497979,0.7082620544501445
+banc,ref B,two-stage [seeded],2-4,13848,5169,0.613157134604275,0.6527280891541133
+banc,ref B,"two-stage matched, else NBLAST [seeded]",2-4,13848,5169,0.6821923743500866,0.6859185787613271
+banc_cord,ref A,stage 1 (label-free GNN),2-4,5989,2278,0.3952245783937218,0.3567081946164877
+banc_cord,ref A,stage 1 (label-free GNN),"2-4, seeds",1529,1163,0.4702419882275997,0.40281941943551464
+banc_cord,ref A,stage 1 (label-free GNN),"2-4, not seeds",4460,2046,0.3695067264573991,0.351459305464364
+banc_cord,ref A,stage 1 (label-free GNN),"2-4, NBLAST hit kept by review",1540,1141,0.4922077922077922,0.4280037463502339
+banc_cord,ref A,stage 1 (label-free GNN),"2-4, NBLAST hit overridden by review",4396,2053,0.36010009099181073,0.34416304617742816
+banc_cord,ref A,stage 1 (label-free GNN),all labeled,22451,3677,0.4475969889982629,0.4025600444185986
+banc_cord,ref A,NBLAST,2-4,5989,2278,0.3053932209049925,0.29460987883550865
+banc_cord,ref A,NBLAST,"2-4, seeds",1529,1163,0.6762589928057554,0.4393069890181382
+banc_cord,ref A,NBLAST,"2-4, not seeds",4460,2046,0.17825112107623317,0.2591062938159638
+banc_cord,ref A,NBLAST,"2-4, NBLAST hit kept by review",1540,1141,1.0,0.5380549615266548
+banc_cord,ref A,NBLAST,"2-4, NBLAST hit overridden by review",4396,2053,0.06574158325750683,0.24216551579726672
+banc_cord,ref A,NBLAST,all labeled,22451,3677,0.3164224310721126,0.2947592681300634
+banc_cord,ref A,two-stage [unseeded],2-4,5989,2278,0.6471865085990983,0.6289483032720457
+banc_cord,ref A,two-stage [unseeded],"2-4, seeds",1529,1163,0.7972531066056245,0.7099963852221943
+banc_cord,ref A,two-stage [unseeded],"2-4, not seeds",4460,2046,0.5957399103139014,0.6196631196433176
+banc_cord,ref A,two-stage [unseeded],"2-4, NBLAST hit kept by review",1540,1141,0.7922077922077922,0.7255904477531261
+banc_cord,ref A,two-stage [unseeded],"2-4, NBLAST hit overridden by review",4396,2053,0.5950864422202001,0.6171261742423385
+banc_cord,ref A,two-stage [unseeded],all labeled,22451,3677,0.4900895283060888,0.567168280135345
+banc_cord,ref A,"two-stage matched, else NBLAST [unseeded]",2-4,5989,2278,0.6505259642678244,0.6094136189214363
+banc_cord,ref A,"two-stage matched, else NBLAST [unseeded]","2-4, seeds",1529,1163,0.8371484630477436,0.7054367241006764
+banc_cord,ref A,"two-stage matched, else NBLAST [unseeded]","2-4, not seeds",4460,2046,0.5865470852017938,0.5945408541248268
+banc_cord,ref A,"two-stage matched, else NBLAST [unseeded]","2-4, NBLAST hit kept by review",1540,1141,0.8941558441558441,0.72384304400852
+banc_cord,ref A,"two-stage matched, else NBLAST [unseeded]","2-4, NBLAST hit overridden by review",4396,2053,0.5639217470427661,0.5931697091749737
+banc_cord,ref A,"two-stage matched, else NBLAST [unseeded]",all labeled,22451,3677,0.40234288004988644,0.4907093397202209
+banc_cord,ref A,two-stage [seeded],2-4,5989,2278,0.5538487226582067,0.5287134270617293
+banc_cord,ref A,two-stage [seeded],"2-4, seeds",1529,1163,0.6762589928057554,0.5973291696761097
+banc_cord,ref A,two-stage [seeded],"2-4, not seeds",4460,2046,0.5118834080717489,0.5222476591672254
+banc_cord,ref A,two-stage [seeded],"2-4, NBLAST hit kept by review",1540,1141,0.8558441558441559,0.6718871578726893
+banc_cord,ref A,two-stage [seeded],"2-4, NBLAST hit overridden by review",4396,2053,0.4465423111919927,0.5000064077450499
+banc_cord,ref A,two-stage [seeded],all labeled,22451,3677,0.46011313527237097,0.5024533498224495
+banc_cord,ref A,"two-stage matched, else NBLAST [seeded]",2-4,5989,2278,0.5369844715311404,0.5065079719170993
+banc_cord,ref A,"two-stage matched, else NBLAST [seeded]","2-4, seeds",1529,1163,0.6762589928057554,0.5821515919393685
+banc_cord,ref A,"two-stage matched, else NBLAST [seeded]","2-4, not seeds",4460,2046,0.489237668161435,0.49719196935814347
+banc_cord,ref A,"two-stage matched, else NBLAST [seeded]","2-4, NBLAST hit kept by review",1540,1141,0.937012987012987,0.662730991311899
+banc_cord,ref A,"two-stage matched, else NBLAST [seeded]","2-4, NBLAST hit overridden by review",4396,2053,0.3951319381255687,0.4744288301774868
+banc_cord,ref A,"two-stage matched, else NBLAST [seeded]",all labeled,22451,3677,0.3739699790655205,0.42702046170674374
+banc_cord,ref B,stage 1 (label-free GNN),2-4,5257,1970,0.406886056686323,0.3719256361590758
+banc_cord,ref B,NBLAST,2-4,5257,1970,0.3016929807875214,0.2989539103090195
+banc_cord,ref B,two-stage [unseeded],2-4,5257,1970,0.6469469279056496,0.6279753039226016
+banc_cord,ref B,"two-stage matched, else NBLAST [unseeded]",2-4,5257,1970,0.6446642571809017,0.6013027490356466
+banc_cord,ref B,two-stage [seeded],2-4,5257,1970,0.5544987635533575,0.5338077922707664
+banc_cord,ref B,"two-stage matched, else NBLAST [seeded]",2-4,5257,1970,0.5326231691078562,0.50674265260111

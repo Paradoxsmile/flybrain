@@ -1,0 +1,12 @@
+{
+  "comparison": "two-stage matched, else NBLAST [seeded] - NBLAST",
+  "subset": "2-4",
+  "n": 14512,
+  "types": 5416,
+  "delta": 0.022670893054024255,
+  "ci_low": 0.012824731517779103,
+  "ci_high": 0.03233624994438451,
+  "outcome": "not confirmed: wiring adds less than 3 points",
+  "n_boot": 10000,
+  "boot_seed": 0
+}
