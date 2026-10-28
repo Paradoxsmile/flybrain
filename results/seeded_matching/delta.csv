@@ -1,0 +1,19 @@
+target,reference,role,comparison,subset,n,types,delta,ci_low,ci_high,outcome
+banc,ref A,primary,"two-stage matched, else NBLAST [seeded] - NBLAST",2-4,14512,5416,0.022670893054024255,0.012824731517779103,0.03233624994438451,not confirmed: wiring adds less than 3 points
+banc,ref A,secondary,"two-stage matched, else NBLAST [seeded] - two-stage matched, else NBLAST [unseeded]",2-4,14512,5416,-0.01839856670341786,-0.02425226000588176,-0.012614499953512883,
+banc,ref A,secondary,two-stage [seeded] - two-stage [unseeded],2-4,14512,5416,-0.009647188533627343,-0.015481021144234355,-0.003842340676980638,
+banc,ref A,descriptive,"two-stage matched, else NBLAST [seeded] - NBLAST","2-4, not seeds",9150,4187,0.03595628415300547,0.020420850651067583,0.051157867925491526,
+banc,ref A,descriptive,"two-stage matched, else NBLAST [seeded] - NBLAST","2-4, NBLAST hit kept by review",9002,4629,-0.15363252610530992,-0.16316037418399623,-0.14439677682863367,
+banc,ref A,descriptive,"two-stage matched, else NBLAST [seeded] - NBLAST","2-4, NBLAST hit overridden by review",4331,2935,0.2710690371738628,0.25542098736997715,0.2864135382453595,
+banc,ref B,secondary,"two-stage matched, else NBLAST [seeded] - NBLAST",2-4,13848,5169,0.014081455805892547,0.0042292922385505785,0.023818249116097433,not confirmed: wiring adds less than 3 points
+banc,ref B,secondary,"two-stage matched, else NBLAST [seeded] - two-stage matched, else NBLAST [unseeded]",2-4,13848,5169,-0.01769208549971115,-0.023842543763526285,-0.01169580091973583,
+banc,ref B,secondary,two-stage [seeded] - two-stage [unseeded],2-4,13848,5169,-0.009170999422299249,-0.015372287624984769,-0.0031393544293557957,
+banc_cord,ref A,secondary,"two-stage matched, else NBLAST [seeded] - NBLAST",2-4,5989,2278,0.23159125062614794,0.21842664078590798,0.24502876006937235,confirmed
+banc_cord,ref A,secondary,"two-stage matched, else NBLAST [seeded] - two-stage matched, else NBLAST [unseeded]",2-4,5989,2278,-0.11354149273668392,-0.12489398097652579,-0.10235140852508405,
+banc_cord,ref A,secondary,two-stage [seeded] - two-stage [unseeded],2-4,5989,2278,-0.09333778594089163,-0.10461173279077654,-0.08226370926486812,
+banc_cord,ref A,descriptive,"two-stage matched, else NBLAST [seeded] - NBLAST","2-4, not seeds",4460,2046,0.3109865470852018,0.2930574098798398,0.3290102846785599,
+banc_cord,ref A,descriptive,"two-stage matched, else NBLAST [seeded] - NBLAST","2-4, NBLAST hit kept by review",1540,1141,-0.06298701298701298,-0.07667316439246263,-0.04954367666232073,
+banc_cord,ref A,descriptive,"two-stage matched, else NBLAST [seeded] - NBLAST","2-4, NBLAST hit overridden by review",4396,2053,0.3293903548680619,0.3132528049871346,0.3459240671353261,
+banc_cord,ref B,secondary,"two-stage matched, else NBLAST [seeded] - NBLAST",2-4,5257,1970,0.2309301883203348,0.21676174012158056,0.2449840213341981,confirmed
+banc_cord,ref B,secondary,"two-stage matched, else NBLAST [seeded] - two-stage matched, else NBLAST [unseeded]",2-4,5257,1970,-0.11204108807304547,-0.12371330630105065,-0.10047036688617121,
+banc_cord,ref B,secondary,two-stage [seeded] - two-stage [unseeded],2-4,5257,1970,-0.09244816435229218,-0.10397854825064871,-0.0809715635058307,

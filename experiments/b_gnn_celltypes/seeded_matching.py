@@ -319,7 +319,10 @@ def run_score(target: str, meta: pd.DataFrame) -> tuple[list, list]:
                     "delta": delta,
                     "ci_low": lo,
                     "ci_high": hi,
-                    "outcome": decide(delta, lo, hi) if role != "descriptive" else "",
+                    # the rule is defined for contrasts against NBLAST alone
+                    "outcome": decide(delta, lo, hi)
+                    if role != "descriptive" and b == "NBLAST"
+                    else "",
                 }
             )
     return rows, deltas

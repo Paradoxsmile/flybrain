@@ -29,11 +29,17 @@ Data: `data/raw/banc/banc_888_meta.feather` already has each neuron's NBLAST top
 
 Outputs: `experiments/b_gnn_celltypes/morphology_baseline.py`, `results/morphology_baseline/*.csv`, one table in Section 4.4 and one paragraph in the Discussion.
 
+## A5. Confirmatory test (seeded matching, pre-registered)
+
+A review called the exploratory A4 result (+6.0, best of six combinations) the paper's weakest point. MCNS has no automatic morphology match to FlyWire, so the follow-up is seeded graph matching on BANC (B3 below is therefore run after all). Pre-registration: [preregistration_confirmatory.md](preregistration_confirmatory.md), committed in `3949b10` before any result; same A4 rule (Δ ≥ 3 points, CI excluding 0).
+
+**Outcome: not met.** Seeded combination 68.7 % vs NBLAST 66.5 % on the BANC brain rare stratum, Δ = +2.3 (95 % CI 1.3–3.2): wiring adds, but less than 3 points. Seeding hurt against unseeded matching (−1.8 brain, −11.4 cord). BANC's reference types are partly circular with NBLAST (reviewed NBLAST proposals), which tilts every comparison toward NBLAST. Framing: A4's middle case. Details: `results/seeded_matching/SUMMARY.md`; draft text: `results/seeded_matching/paper_section.md`.
+
 ## B. Paper (about 1 week)
 
 1. **Focus.** Rebuild the abstract around rare types, the pre-registered tests and the A4 outcome, with at most 8 numbers. Keep 3 contributions: the two-stage pipeline, pre-registration plus sandbox, and the failure modes. Shorten Sections 4.1-4.2 to support material.
 2. **Uncertainty.** Bootstrap 95 % confidence intervals over types for every pre-registered number in Tables 6 and 8. These come from saved predictions; no reruns.
-3. **Seeded matching.** Do not run it. Name it in the Limitations as the natural next step: confident common-type neurons as anchors.
+3. **Seeded matching.** ~~Do not run it.~~ Run as the A5 confirmatory test (hard NBLAST seeds); it did not help. Name soft seeds (NBLAST as a prior term) in the Limitations as the next step.
 4. **Main figure.** A pipeline diagram plus one panel of stage 1 / two-stage / oracle (and NBLAST) for all five pairs.
 5. **References.** Close the open checks in `docs/literature.md` section 5. Verify Berg et al. 2026 (volume, pages, DOI) and the Bates et al. 2026 author list. Add Shiu et al. 2024 only if it is cited.
 6. **Placeholders.** Remove every `[bracket]` item: repository URL, Zenodo DOI.
@@ -50,4 +56,5 @@ Outputs: `experiments/b_gnn_celltypes/morphology_baseline.py`, `results/morpholo
 - [x] A1-A2 results are committed and A4's framing is applied to the abstract.
 - [x] References are complete; the only open item in the paper (`paper/main.tex`) is the Zenodo DOI.
 - [x] CIs are in the pre-registered tables (Tables 5 and 7 after renumbering).
+- [x] A5 confirmatory test run and reported (rule not met); the abstract still needs the A4 middle framing in `paper/main.tex`.
 - [ ] `v1.0` is tagged, the Zenodo DOI is in place and the preprint is posted.
