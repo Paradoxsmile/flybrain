@@ -16,7 +16,7 @@ Every table and figure of the paper ([paper/draft.md](../paper/draft.md), v0.2),
 
 | Paper | Commands | Numbers in |
 |---|---|---|
-| Table 2, Figure 1 | `S/benchmark.py`; then `S/plot_benchmark.py` for the figure. Baselines at commit `2000b7b`, NTAC at `bfbd103`, GNN rows at `343125f`. The run can be split with `--labels` / `--methods`. | `results/benchmark/summary.md`; `docs/benchmark_{light,dark}.png` |
+| Table 2, Figure 2 | `S/benchmark.py`; then `S/plot_benchmark.py` for the figure. Baselines at commit `2000b7b`, NTAC at `bfbd103`, GNN rows at `343125f`. The run can be split with `--labels` / `--methods`. | `results/benchmark/summary.md`; `docs/benchmark_{light,dark}.png` |
 | MCNS replication | `S/benchmark.py --dataset mcns` (at `4ec2a8a`) | `results/benchmark_mcns/summary.md` |
 | GNN-seeded NTAC | `S/hybrid.py` (needs the benchmark and transfer runs) | `results/hybrid/summary.md` |
 | Ablations (README) | `S/ablation.py --label-col cell_type --min-class-size 20` and `--label-col super_class`, each also with `--split left_right` / `right_left` | `results/ablation_*/summary.csv` (not committed) |
@@ -29,8 +29,8 @@ Every table and figure of the paper ([paper/draft.md](../paper/draft.md), v0.2),
 | GNNs saved for the label-free pipeline | `S/transfer.py --methods gnn --out transfer2` | `results/transfer2/summary.md` |
 | FAFB → MCNS, 92.6 % | `S/label_free.py` (models `transfer2`, output `label_free`) | `results/label_free/summary.md` |
 | Reverse, MCNS → FAFB, 83.4 % | for each `v` in `density raw janelia`: `S/transfer.py --source mcns --source-variant v --methods gnn --out transfer_rev_v`; then `S/label_free.py --source mcns --target fafb` | `results/transfer_rev_*/summary.md`, `results/label_free_rev/summary.md` |
-| Figure 2 | `paper/make_figures.py` | `paper/figures/transfer.png` |
-| Region and type-size breakdown, Figure 3 | `S/stratify.py` | `results/stratified/summary.md`; `paper/figures/type_f1.png` |
+| Figure 3 | `paper/make_figures.py` | `paper/figures/transfer.png` |
+| Region and type-size breakdown, Figure 4 | `S/stratify.py` | `results/stratified/summary.md`; `paper/figures/type_f1.png` |
 | Table 3 (minimum type size) | `S/size_threshold.py --min-sizes 20 10 5 3 2`. The `within` stage trains the GNNs (GPU; lean training below 5), `label_free` runs the transfer (CPU; lean below 5) and `report` writes the tables. Stages can be run separately with `--stages`. | `results/size_threshold/SUMMARY.md` |
 
 ## Section 4.3: rare types, within FlyWire and FAFB → MCNS
@@ -46,6 +46,8 @@ Every table and figure of the paper ([paper/draft.md](../paper/draft.md), v0.2),
 |---|---|---|
 | Table 6 (BANC brain) | `S/size_threshold.py --min-sizes 2 --stages label_free --target banc --select size_agreement`; `S/graph_matching_mcns.py --target banc --stage match`, the same with `--candidates oracle`, and with `--variant raw` / `--variant scaled` | `results/graph_matching_banc/SUMMARY.md`, `metrics.csv` |
 | Table 7 (candidate selection, development) | Run table R1–R14 in [candidate_selection_plan.md](candidate_selection_plan.md). The steps: `S/candidate_selection.py --stage mass`, `--stage select`, `--stage twotier`. The 25 % sandbox stage 1: `S/size_threshold.py --min-sizes 2 --stages label_free --select size_agreement --target-retention 0.25` (and `--min-sizes 10` for the fallback; `--retention-seed 3` for the second realization). The matching: `S/graph_matching_mcns.py --stage match --stage1 label_free_mcns_r0.25_size_agreement --out graph_matching_mcns_r0.25` with `--candidates gnn`, `union`, `file:mass_fill` (written by `--stage select`) and `oracle`; the second realization with `--stage1 label_free_mcns_r0.25_seed3_size_agreement --out graph_matching_mcns_r0.25_seed3`. Full MCNS `union`: `--candidates union --out graph_matching_mcns_cand`. Many-to-one: `--candidates oracle --capacity 2 --out graph_matching_mcns_cap`. | `results/candidate_selection/SUMMARY.md`; `results/graph_matching_mcns_{r0.25,r0.25_seed3,cand,cap}/metrics.csv` |
+| Figure 1 (rare types) | `python paper/make_figures.py` (needs the results of Tables 5, 6, 8 and 9 and `S/bootstrap_ci.py`) | `paper/figures/rare_types.png` |
+| Table 6 and 8 intervals | `S/bootstrap_ci.py` (needs the saved stage-1 predictions and matchings) | `results/bootstrap_ci/SUMMARY.md`, `metrics.csv` |
 | Table 9 (morphology baseline, exploratory; [finalize_plan.md](finalize_plan.md) A1–A2) | The five commands in `results/morphology_baseline/SUMMARY.md` ("Commands"): `S/morphology_baseline.py --candidates-out`, three `S/graph_matching_mcns.py` runs into `morphology_baseline/gm_banc*`, then `S/morphology_baseline.py` | `results/morphology_baseline/SUMMARY.md`, `metrics.csv`, `gm_banc*/metrics.csv` |
 | Table 8 (nerve cords) | For `t` in `banc_cord mcns_cord`: `S/size_threshold.py --source manc --min-sizes 2 --stages within` (MANC GNNs; also `--min-sizes 10`), then the seven runs of [vnc_rare_protocol.md](vnc_rare_protocol.md) ("Runs"); `S/vnc_report.py` collects them | `results/vnc_rare/SUMMARY.md`, `report.json`; `results/graph_matching_{banc,mcns}_cord*/metrics.csv` |
 
@@ -54,7 +56,7 @@ Every table and figure of the paper ([paper/draft.md](../paper/draft.md), v0.2),
 | Paper | Commands | Numbers in |
 |---|---|---|
 | Table 10 (BANC, common types) | `S/label_free.py --target banc`; `S/label_free.py --source mcns --target banc` | `results/label_free_fafb_banc/summary.md`, `results/label_free_mcns_banc/summary.md` |
-| Figure 4, density | `S/thinning.py --labels cell_type super_class`; augmented: `S/thinning.py --labels cell_type super_class --retentions 1 --target-retentions 1 0.6 0.4 0.25 --thin-aug 0.25 --out thinning_aug`; figure: `paper/make_figures.py` | `results/thinning/summary.md`, `results/thinning_aug/summary.md`; `paper/figures/thinning.png` |
+| Figure 5, density | `S/thinning.py --labels cell_type super_class`; augmented: `S/thinning.py --labels cell_type super_class --retentions 1 --target-retentions 1 0.6 0.4 0.25 --thin-aug 0.25 --out thinning_aug`; figure: `paper/make_figures.py` | `results/thinning/summary.md`, `results/thinning_aug/summary.md`; `paper/figures/thinning.png` |
 | On BANC with thinned GNNs (exploratory) | `S/label_free.py --target banc --source-retention 0.4`; `S/label_free.py --target banc --models thinning_aug/models --out label_free_fafb_banc_aug` | `results/label_free_fafb_banc_r1_s0.4/summary.md`, `results/label_free_fafb_banc_aug/summary.md` |
 | Table 11, sandbox column | `S/label_free.py --target mcns --out label_free_fafb_mcns_r1`; `--target mcns --target-retention 0.5`; `--target-retention 0.2`; `--target-retention 0.5 --target-exclude R1-6`, the same with `--max-weight 10`; `S/label_free.py --source mcns --target fafb --out label_free_mcns_fafb_r1`; the same with `--target-retention 0.35`. Then `S/selection_rules.py` on these seven runs with `--out selection_rules_sandbox.md` | `results/selection_rules_sandbox.md` |
 | Table 11, BANC column | `S/label_free.py --target banc --out label_free_fafb_banc_cols`; `S/label_free.py --source mcns --target banc --labels cell_type --out label_free_mcns_banc_cols`, the same with `--labels super_class --out label_free_mcns_banc_cols_super`; then `S/selection_rules.py label_free_fafb_banc_cols label_free_mcns_banc_cols_super label_free_mcns_banc_cols label_free_fafb_banc_r1_s0.4 --out selection_rules_banc.md` | `results/selection_rules_banc.md` |
@@ -65,7 +67,7 @@ Every table and figure of the paper ([paper/draft.md](../paper/draft.md), v0.2),
 
 | Paper | Commands | Numbers in |
 |---|---|---|
-| Table 14, Figure 5 | `S/label_effort.py` (needs `label_free` and `label_free_fafb_banc`); the figure is written next to the results and copied to `paper/figures/` | `results/label_effort/SUMMARY.md`, `metrics.csv`; `paper/figures/label_effort.png` |
+| Table 14, Figure 6 | `S/label_effort.py` (needs `label_free` and `label_free_fafb_banc`); the figure is written next to the results and copied to `paper/figures/` | `results/label_effort/SUMMARY.md`, `metrics.csv`; `paper/figures/label_effort.png` |
 | Accuracy estimation, error flagging | `S/estimate_accuracy.py` (needs the label-free runs above) | `results/accuracy_estimation/SUMMARY.md` |
 
 ## Notes
