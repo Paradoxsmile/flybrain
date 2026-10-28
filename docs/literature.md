@@ -88,8 +88,10 @@ Status: October 2026. Searched with alphaXiv (arXiv full text), bioRxiv, Semanti
 
 ## 5. Open checks before citing
 
-- MCNS paper (Berg et al., 2026): volume, pages and date against the *Cell* page.
-- BANC paper: author list.
-- Troidl et al.: accuracy numbers.
-- Priebe et al. (2017): whether a journal version exists (arXiv:1705.03297 confirmed).
-- NTAC: exact per-dataset numbers (in figures and supplement, not in the text we read).
+Closed for paper v0.3 (2026-10-28):
+
+- MCNS paper (Berg et al., 2026): *Cell* 189(18), 5504–5526, doi:10.1016/j.cell.2026.08.015, confirmed (PubMed 41279223).
+- BANC paper: *Nature* (2026), doi:10.1038/s41586-026-10735-w; first authors Bates, Phelps, Kim, Yang, confirmed.
+- Troidl et al.: no numbers of theirs are cited in the draft.
+- Priebe et al. (2017): no journal version found (submitted to JASA; cited as arXiv:1705.03297).
+- NTAC: doi:10.1038/s41467-025-68044-1. The draft cites only our reimplementation's numbers, not the paper's.
