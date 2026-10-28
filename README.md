@@ -7,7 +7,7 @@
 
 Typing the neurons of an unlabeled *Drosophila* connectome from wiring alone. A graph neural network sees only anonymous connectivity, never a partner's label, and is transferred from an annotated connectome to a new one without any target label. For the rarest cell types (2–4 neurons, about three quarters of FlyWire's types), the transferred GNN selects the candidate neurons and graph matching against the reference types them. The approach was tested on five connectomes, four of them under protocols committed before any run.
 
-Paper: [paper/main.pdf](paper/main.pdf) (LaTeX source `paper/main.tex`; build with `latexmk -pdf main.tex` in `paper/`). Every experiment in detail: [docs/results.md](docs/results.md). Command and result file for every number: [docs/reproduce.md](docs/reproduce.md).
+Paper: [paper/main.pdf](paper/main.pdf) (LaTeX source `paper/main.tex`; build with `latexmk -pdf main.tex` in `paper/`). Every experiment in detail: [docs/results.md](docs/results.md). Command and result file for every number: [docs/reproduce.md](docs/reproduce.md). Table 2 of the paper defines the names of the pipeline's variants and maps them to the code options.
 
 ## Main results
 
@@ -16,12 +16,12 @@ Paper: [paper/main.pdf](paper/main.pdf) (LaTeX source `paper/main.tex`; build wi
 | Source → target | Stage 1: GNN alone | Two-stage | Oracle candidates (uses labels) | Data |
 |---|---|---|---|---|
 | FlyWire left → right hemisphere | 78.9 | 85.8 | 92.2 | development |
-| FlyWire → male CNS (MCNS) brain | 54.2 | 74.5; 81.6 with `union` candidates | 85.3 | development |
+| FlyWire → male CNS (MCNS) brain | 54.2 | 74.5; 81.6 with broad candidates | 85.3 | development |
 | **FlyWire → BANC brain** | **22.2** | **41.3** (morphology reference: 40.6) | 65.9 | [protocol](docs/banc_rare_protocol.md) |
-| **MANC → BANC nerve cord** | **39.5** | **61.0** with `union` (curated reference: 61.0) | 75.5 | [protocol](docs/vnc_rare_protocol.md) |
-| **MANC → MCNS nerve cord** | **72.0** | **82.2** with `union` | 87.0 | [protocol](docs/vnc_rare_protocol.md) |
+| **MANC → BANC nerve cord** | **39.5** | **61.0** with broad candidates (curated reference: 61.0) | 75.5 | [protocol](docs/vnc_rare_protocol.md) |
+| **MANC → MCNS nerve cord** | **72.0** | **82.2** with broad candidates | 87.0 | [protocol](docs/vnc_rare_protocol.md) |
 
-The left → right stage 1 is the GNN's majority vote over three seeds. Of the pre-registered expectations, all four held on the BANC brain and two of four on both nerve cords. A gain of +15 points was out of reach on MCNS, whose stage 1 is already at 72 %. A two-tier fallback that had helped on the brain lowered accuracy on both cords and was dropped.
+The left → right stage 1 is the GNN's majority vote over three seeds. Of the pre-registered expectations, all four held on the BANC brain and two of four on both nerve cords. A gain of +15 points was out of reach on MCNS, whose stage 1 is already at 72 %. Broad candidates take every neuron whose stage-1 type is rare before or after NTAC; the pre-registered BANC-brain test used the stricter first rule (after NTAC only). A coarse fallback that had helped on the brain lowered accuracy on both cords and was dropped.
 
 **Wiring adds to morphology** (exploratory, [details](results/morphology_baseline/SUMMARY.md)). On the BANC brain's rare types, BANC's automatic NBLAST matches alone reach 66.5 %, wiring alone 51.2 %, and the matched type where graph matching assigns a neuron, NBLAST elsewhere, 72.5 % (+6.0 points, 95 % interval 5.1–7.1). In the nerve cord, where raw NBLAST is weak, the combination reaches 64.9 %.
 
@@ -33,12 +33,12 @@ The left → right stage 1 is the GNN's majority vote over three seeds. Of the p
 | FlyWire, unlabeled hemisphere (left → right) | 94.5 | NTAC: 8.4; partner profile: 8.7 |
 | FlyWire → MCNS, label-free (394 types) | 92.6 (optic lobe 97.2, all other neurons 74.0) | trained on MCNS labels: 96.6 |
 | MCNS → FlyWire, label-free | 83.4 | trained on FlyWire labels: 95.2 |
-| **FlyWire → BANC brain**, label-free | 61.7 (central brain, morphology reference: 32.3) | MCNS → BANC: 1.4 (the original rule chose a collapsed labeling) |
+| **FlyWire → BANC brain**, label-free | 61.7 (central brain, morphology reference: 32.3) | MCNS → BANC: 1.4 (the type-consistency rule chose a collapsed labeling) |
 | **FlyWire → hemibrain** (partial volume), label-free | 19.6 | best candidate, post hoc: 25.5 |
 
 - Label-free transfer works between complete connectomes and keeps 84.2 % with 7,064 types down to two neurons per type (FlyWire → MCNS). Its accuracy comes mostly from the optic lobe.
 - Prior matching of predicted type sizes carried over to every complete or sparse target (+3.6 to +17.5 points).
-- The original label-free selection rule failed on the sparse BANC brain. A rule revised on a sandbox of degraded development connectomes held afterwards.
+- The original label-free selection rule (type consistency) failed on the sparse BANC brain. The size-and-agreement rule, revised on a sandbox of degraded development connectomes, held afterwards.
 - Reconstruction density explains about half of the loss on BANC. Partial volumes such as the hemibrain cannot be typed this way.
 - With hand labels, NTAC overtakes the GNN on common types at about 1.3 % of each type labeled. The model is most useful with no labels, for the rare types a labeling budget reaches last, and for directing review: the 20 % least-agreed neurons hold 77 % of the errors on MCNS.
 
@@ -48,12 +48,12 @@ The left → right stage 1 is the GNN's majority vote over three seeds. Of the p
 2. **Label-free transfer** (`label_free.py`; `lean_label_free.py` for thousands of types):
    - the target is built in a few alignment variants, and features are normalized by source or target statistics;
    - prior matching rescales the predicted type sizes to the reference (`flybrain/adapt.py`);
-   - a label-free rule chooses among the candidates: type sizes plus seed agreement, `--select size_agreement` (`flybrain/selection.py`);
+   - a label-free rule chooses among the candidates: the size-and-agreement rule (type sizes plus seed agreement), `--select size_agreement` (`flybrain/selection.py`);
    - NTAC refines the result, seeded where three GNNs agree (`flybrain/ntac.py`).
 3. **Rare types** (`graph_matching_mcns.py`):
-   - candidates are the target neurons whose stage-1 type is a 2–4-neuron type before or after NTAC (`--candidates union`);
+   - broad candidates are the target neurons whose stage-1 type is a 2–4-neuron type before or after NTAC (`--candidates union`);
    - graph matching against the source's rare-type neurons uses Frank–Wolfe on the relaxed quadratic assignment problem, blocked by hemisphere and with ipsilateral and contralateral edges;
-   - in the nerve cord, a third block holds the neurons that pass through the neck (`--passing-block`);
+   - in the nerve cord, a third block (the neck block) holds the neurons that pass through the neck (`--passing-block`);
    - matched candidates take the matched neuron's type.
 
 Pre-registration: each test on a new dataset was fixed in a protocol before any run ([BANC](docs/banc_protocol.md), [hemibrain](docs/hemibrain_protocol.md), [BANC rare types](docs/banc_rare_protocol.md), [nerve cords](docs/vnc_rare_protocol.md)). Between tests, methods were changed only on degraded copies of the development connectomes.
