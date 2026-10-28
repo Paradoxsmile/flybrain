@@ -13,6 +13,8 @@ abstract: >-
 authors:
   - family-names: Vogt
     given-names: Maximilian
+version: 1.0.0
+date-released: 2026-10-28
 repository-code: "https://github.com/Paradoxsmile/flybrain"
 license: MIT
 keywords:

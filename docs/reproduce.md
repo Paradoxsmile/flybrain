@@ -1,6 +1,6 @@
 # Reproducing the numbers
 
-Every table and figure of the paper ([paper/draft.md](../paper/draft.md), v0.2), with the commands that produce it and the file the numbers are read from.
+Every table and figure of the paper ([paper/main.pdf](../paper/main.pdf), source `paper/main.tex`, v0.3; supplementary tables and figures S1-S2 at its end), with the commands that produce it and the file the numbers are read from.
 
 ## Setup
 

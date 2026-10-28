@@ -7,7 +7,7 @@
 
 Typing the neurons of an unlabeled *Drosophila* connectome from wiring alone. A graph neural network sees only anonymous connectivity, never a partner's label, and is transferred from an annotated connectome to a new one without any target label. For the rarest cell types (2–4 neurons, about three quarters of FlyWire's types), the transferred GNN selects the candidate neurons and graph matching against the reference types them. The approach was tested on five connectomes, four of them under protocols committed before any run.
 
-Paper draft: [paper/draft.md](paper/draft.md). Every experiment in detail: [docs/results.md](docs/results.md). Command and result file for every number: [docs/reproduce.md](docs/reproduce.md).
+Paper: [paper/main.pdf](paper/main.pdf) (LaTeX source `paper/main.tex`; build with `latexmk -pdf main.tex` in `paper/`). Every experiment in detail: [docs/results.md](docs/results.md). Command and result file for every number: [docs/reproduce.md](docs/reproduce.md).
 
 ## Main results
 
@@ -22,6 +22,8 @@ Paper draft: [paper/draft.md](paper/draft.md). Every experiment in detail: [docs
 | **MANC → MCNS nerve cord** | **72.0** | **82.2** with `union` | 87.0 | [protocol](docs/vnc_rare_protocol.md) |
 
 The left → right stage 1 is the GNN's majority vote over three seeds. Of the pre-registered expectations, all four held on the BANC brain and two of four on both nerve cords. A gain of +15 points was out of reach on MCNS, whose stage 1 is already at 72 %. A two-tier fallback that had helped on the brain lowered accuracy on both cords and was dropped.
+
+**Wiring adds to morphology** (exploratory, [details](results/morphology_baseline/SUMMARY.md)). On the BANC brain's rare types, BANC's automatic NBLAST matches alone reach 66.5 %, wiring alone 51.2 %, and the matched type where graph matching assigns a neuron, NBLAST elsewhere, 72.5 % (+6.0 points, 95 % interval 5.1–7.1). In the nerve cord, where raw NBLAST is weak, the combination reaches 64.9 %.
 
 **Common types: wiring alone, and label-free transfer.** Cell types with ≥ 20 FlyWire neurons (434 types), accuracy %:
 
@@ -84,7 +86,7 @@ FlyWire (FAFB v783), MCNS v1.0, BANC v888, the hemibrain v1.2.1 and MANC v1.2.1 
 | `flybrain/` | data loading (`loading.py`, `mcns.py`, `banc.py`, `hemibrain.py`, `manc.py`), model and training, prior matching (`adapt.py`), label-free scores (`consistency.py`, `selection.py`, `coverage.py`), NTAC, thinning |
 | `experiments/b_gnn_celltypes/` | one script per experiment: benchmark and baselines, transfer, label-free transfer, type-size sweep, graph matching, candidate selection, labeling effort, accuracy estimation, nerve-cord test |
 | `docs/` | [results in detail](docs/results.md), [reproduction map](docs/reproduce.md), the four protocols, development plans, [literature](docs/literature.md) |
-| `paper/` | draft and figures (`make_figures.py`) |
+| `paper/` | the paper (`main.tex`, `references.bib`, built `main.pdf`, supplement included) and its figures (`make_figures.py`) |
 | `results/` | committed summaries of the reported runs |
 | `tests/` | unit and smoke tests (`uv run pytest`) |
 

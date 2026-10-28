@@ -1,6 +1,6 @@
 # Results in detail
 
-The full record of part b: every experiment, table and caveat, in the order the work was done. The README gives the overview, [paper/draft.md](../paper/draft.md) the argument, and [reproduce.md](reproduce.md) the command and result file for each number.
+The full record of part b: every experiment, table and caveat, in the order the work was done. The README gives the overview, [paper/main.pdf](../paper/main.pdf) the argument, and [reproduce.md](reproduce.md) the command and result file for each number.
 
 ## Methods
 

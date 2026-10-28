@@ -16,6 +16,15 @@ results/**
 !results/vnc_rare/report.json
 !results/selection_rules_*.md
 results/pytest_*/**
+# LaTeX build files (the PDF is committed)
+paper/*.aux
+paper/*.log
+paper/*.bbl
+paper/*.blg
+paper/*.out
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.synctex.gz
 # python
 .venv/
 __pycache__/
