@@ -68,7 +68,7 @@ Status: October 2026. Searched with alphaXiv (arXiv full text), bioRxiv, Semanti
 ### E. Network statistics and modeling context
 
 - **Lin et al. (2024). Network statistics of the whole-brain connectome of *Drosophila*. *Nature* 634, 153–165.** Rich club (about 30 % of neurons), motifs, region subnetworks. Relation: context for degree features and heterogeneity.
-- **Lappalainen et al. (2024). Connectome-constrained networks predict neural activity across the fly visual system. *Nature*.** Part c of this project.
+- **Lappalainen et al. (2024). Connectome-constrained networks predict neural activity across the fly visual system. *Nature*.** Context only; reproducing it was planned as a part c, which is not part of this project.
 
 ## 3. What this changes in our project
 

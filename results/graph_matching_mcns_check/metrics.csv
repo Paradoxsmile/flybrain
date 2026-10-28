@@ -1,0 +1,7 @@
+candidates,method,reference,subset,n,types,acc,macro_f1,to_dummy,fafb_unmatched,seconds
+gnn,stage 1 (label-free GNN),MCNS label,2-4 (MCNS label),13742,5370,0.5424974530636006,0.4902464384675646,0,0,0
+gnn,stage 1 (label-free GNN),MCNS label,"2-4, matched candidates",11475,4777,0.6479302832244008,0.5495089652400615,0,0,0
+gnn,stage 1 (label-free GNN),MCNS label,all labeled,133356,7064,0.8424742793725066,0.5128927702052224,0,0,0
+gnn,gm_bary,MCNS label,2-4 (MCNS label),13742,5370,0.7450880512298065,0.7821584748791452,1849,0,1793
+gnn,gm_bary,MCNS label,"2-4, matched candidates",11475,4777,0.8905446623093682,0.8774735210594536,1849,0,1793
+gnn,gm_bary,MCNS label,all labeled,133356,7064,0.8633507303758361,0.7348021183833352,1849,0,1793

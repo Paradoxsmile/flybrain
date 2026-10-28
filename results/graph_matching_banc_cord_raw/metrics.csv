@@ -1,0 +1,145 @@
+candidates,method,reference,subset,n,types,acc,macro_f1,to_dummy,fafb_unmatched,seconds
+union,stage 1 (label-free GNN),ref A,2-4 (ref A),5989,2278,0.3952245783937218,0.3567081946164877,0,0,0
+union,stage 1 (label-free GNN),ref A,"2-4, matched candidates",4799,2095,0.4913523650760575,0.38738962641353647,0,0,0
+union,stage 1 (label-free GNN),ref A,all labeled,22451,3677,0.4475969889982629,0.4025600444185986,0,0,0
+union,stage 1 (label-free GNN),ref B,2-4 (ref B),5257,1970,0.406886056686323,0.3727454734002329,0,0,0
+union,stage 1 (label-free GNN),ref B,"2-4, matched candidates (ref B)",4206,1815,0.5059438896814075,0.4040267672718781,0,0,0
+union,stage 1 (label-free GNN),ref B,all labeled (ref B),20511,3281,0.45117254156306374,0.41981707322458495,0,0,0
+union,stage 1 (label-free GNN),ref A,"2-4 (ref A), ascending",919,361,0.5408052230685527,0.531072144230039,0,0,0
+union,stage 1 (label-free GNN),ref A,"2-4 (ref A), descending",891,397,0.41414141414141414,0.35014813415207674,0,0,0
+union,stage 1 (label-free GNN),ref A,"2-4 (ref A), intrinsic",3837,1383,0.37346885587698725,0.3331369914449727,0,0,0
+union,stage 1 (label-free GNN),ref A,"2-4 (ref A), motor",225,97,0.16,0.1245902278437148,0,0,0
+union,stage 1 (label-free GNN),ref A,"2-4 (ref A), other",43,16,0.23255813953488372,0.1494318181818182,0,0,0
+union,stage 1 (label-free GNN),ref A,"2-4 (ref A), sensory",74,24,0.2972972972972973,0.2771164021164021,0,0,0
+union,stage 1 (label-free GNN),ref A,"2-4 (ref A), passing",1840,766,0.47282608695652173,0.433715213218562,0,0,0
+union,stage 1 (label-free GNN),ref A,"2-4 (ref A), not passing",4149,1513,0.36080983369486624,0.3174854025187973,0,0,0
+union,stage 1 (label-free GNN),ref A,5-19,10341,1292,0.549463301421526,0.4875994375913537,0,0,0
+union,stage 1 (label-free GNN),ref A,>= 20,6121,107,0.32674399607907206,0.3519022675027974,0,0,0
+union,stage 1 (label-free GNN),ref A,5-9,6363,978,0.545025931164545,0.48774194039221974,0,0,0
+union,stage 1 (label-free GNN),ref A,10-19,3978,314,0.5565610859728507,0.48715559128801944,0,0,0
+union,stage 1 (label-free GNN) + two-tier m10,ref A,2-4 (ref A),5989,2278,0.3952245783937218,0.3567081946164877,0,0,0
+union,stage 1 (label-free GNN) + two-tier m10,ref A,"2-4, matched candidates",4799,2095,0.4913523650760575,0.38738962641353647,0,0,0
+union,stage 1 (label-free GNN) + two-tier m10,ref A,all labeled,22451,3677,0.44354371742906773,0.40094992104541693,0,0,0
+union,stage 1 (label-free GNN) + two-tier m10,ref B,2-4 (ref B),5257,1970,0.406886056686323,0.3727454734002329,0,0,0
+union,stage 1 (label-free GNN) + two-tier m10,ref B,"2-4, matched candidates (ref B)",4206,1815,0.5059438896814075,0.4040267672718781,0,0,0
+union,stage 1 (label-free GNN) + two-tier m10,ref B,all labeled (ref B),20511,3281,0.44624835454146555,0.4181541316375582,0,0,0
+union,stage 1 (label-free GNN) + two-tier m10,ref A,"2-4 (ref A), ascending",919,361,0.5408052230685527,0.531072144230039,0,0,0
+union,stage 1 (label-free GNN) + two-tier m10,ref A,"2-4 (ref A), descending",891,397,0.41414141414141414,0.35014813415207674,0,0,0
+union,stage 1 (label-free GNN) + two-tier m10,ref A,"2-4 (ref A), intrinsic",3837,1383,0.37346885587698725,0.3331369914449727,0,0,0
+union,stage 1 (label-free GNN) + two-tier m10,ref A,"2-4 (ref A), motor",225,97,0.16,0.1245902278437148,0,0,0
+union,stage 1 (label-free GNN) + two-tier m10,ref A,"2-4 (ref A), other",43,16,0.23255813953488372,0.1494318181818182,0,0,0
+union,stage 1 (label-free GNN) + two-tier m10,ref A,"2-4 (ref A), sensory",74,24,0.2972972972972973,0.2771164021164021,0,0,0
+union,stage 1 (label-free GNN) + two-tier m10,ref A,"2-4 (ref A), passing",1840,766,0.47282608695652173,0.433715213218562,0,0,0
+union,stage 1 (label-free GNN) + two-tier m10,ref A,"2-4 (ref A), not passing",4149,1513,0.36080983369486624,0.3174854025187973,0,0,0
+union,stage 1 (label-free GNN) + two-tier m10,ref A,5-19,10341,1292,0.5385359249589015,0.4841545597408013,0,0,0
+union,stage 1 (label-free GNN) + two-tier m10,ref A,>= 20,6121,107,0.33033818003594184,0.3381673005843359,0,0,0
+union,stage 1 (label-free GNN) + two-tier m10,ref A,5-9,6363,978,0.545025931164545,0.48774194039221974,0,0,0
+union,stage 1 (label-free GNN) + two-tier m10,ref A,10-19,3978,314,0.5281548516842635,0.47298112573733875,0,0,0
+union,gm_bary_raw_pass,ref A,2-4 (ref A),5989,2278,0.5613624979128402,0.5624774953156458,2176,0,138
+union,gm_bary_raw_pass,ref A,"2-4, matched candidates",4799,2095,0.698687226505522,0.6113717108969171,2176,0,138
+union,gm_bary_raw_pass,ref A,all labeled,22451,3677,0.48015678588926997,0.5308522017145633,2176,0,138
+union,gm_bary_raw_pass,ref B,2-4 (ref B),5257,1970,0.5594445501236447,0.5589854218362728,2176,0,138
+union,gm_bary_raw_pass,ref B,"2-4, matched candidates (ref B)",4206,1815,0.6966238706609605,0.6063551594219233,2176,0,138
+union,gm_bary_raw_pass,ref B,all labeled (ref B),20511,3281,0.47847496465311296,0.5322475076401645,2176,0,138
+union,gm_bary_raw_pass,ref A,"2-4 (ref A), ascending",919,361,0.6441784548422198,0.6722643107440239,2176,0,138
+union,gm_bary_raw_pass,ref A,"2-4 (ref A), descending",891,397,0.6980920314253648,0.7040278403984461,2176,0,138
+union,gm_bary_raw_pass,ref A,"2-4 (ref A), intrinsic",3837,1383,0.5199374511336982,0.5037823067107231,2176,0,138
+union,gm_bary_raw_pass,ref A,"2-4 (ref A), motor",225,97,0.4666666666666667,0.49745117425529795,2176,0,138
+union,gm_bary_raw_pass,ref A,"2-4 (ref A), other",43,16,0.3023255813953488,0.1890625,2176,0,138
+union,gm_bary_raw_pass,ref A,"2-4 (ref A), sensory",74,24,0.47297297297297297,0.46369047619047615,2176,0,138
+union,gm_bary_raw_pass,ref A,"2-4 (ref A), passing",1840,766,0.6641304347826087,0.6851557780151865,2176,0,138
+union,gm_bary_raw_pass,ref A,"2-4 (ref A), not passing",4149,1513,0.5157869366112317,0.5003267735422395,2176,0,138
+union,gm_bary_raw_pass,ref A,5-19,10341,1292,0.5268349289237018,0.4899418452171883,2176,0,138
+union,gm_bary_raw_pass,ref A,>= 20,6121,107,0.32184283613788595,0.35154156406355996,2176,0,138
+union,gm_bary_raw_pass,ref A,5-9,6363,978,0.5231808895175232,0.4909173907906938,2176,0,138
+union,gm_bary_raw_pass,ref A,10-19,3978,314,0.5326797385620915,0.48690336250735244,2176,0,138
+union,gm_bary_raw_pass + two-tier m10,ref A,2-4 (ref A),5989,2278,0.5613624979128402,0.5624774953156458,2176,0,138
+union,gm_bary_raw_pass + two-tier m10,ref A,"2-4, matched candidates",4799,2095,0.698687226505522,0.6113717108969171,2176,0,138
+union,gm_bary_raw_pass + two-tier m10,ref A,all labeled,22451,3677,0.47654892877822813,0.5292571171006956,2176,0,138
+union,gm_bary_raw_pass + two-tier m10,ref B,2-4 (ref B),5257,1970,0.5594445501236447,0.5589854218362728,2176,0,138
+union,gm_bary_raw_pass + two-tier m10,ref B,"2-4, matched candidates (ref B)",4206,1815,0.6966238706609605,0.6063551594219233,2176,0,138
+union,gm_bary_raw_pass + two-tier m10,ref B,all labeled (ref B),20511,3281,0.47394081224708695,0.5306781595159616,2176,0,138
+union,gm_bary_raw_pass + two-tier m10,ref A,"2-4 (ref A), ascending",919,361,0.6441784548422198,0.6722643107440239,2176,0,138
+union,gm_bary_raw_pass + two-tier m10,ref A,"2-4 (ref A), descending",891,397,0.6980920314253648,0.7040278403984461,2176,0,138
+union,gm_bary_raw_pass + two-tier m10,ref A,"2-4 (ref A), intrinsic",3837,1383,0.5199374511336982,0.5037823067107231,2176,0,138
+union,gm_bary_raw_pass + two-tier m10,ref A,"2-4 (ref A), motor",225,97,0.4666666666666667,0.49745117425529795,2176,0,138
+union,gm_bary_raw_pass + two-tier m10,ref A,"2-4 (ref A), other",43,16,0.3023255813953488,0.1890625,2176,0,138
+union,gm_bary_raw_pass + two-tier m10,ref A,"2-4 (ref A), sensory",74,24,0.47297297297297297,0.46369047619047615,2176,0,138
+union,gm_bary_raw_pass + two-tier m10,ref A,"2-4 (ref A), passing",1840,766,0.6641304347826087,0.6851557780151865,2176,0,138
+union,gm_bary_raw_pass + two-tier m10,ref A,"2-4 (ref A), not passing",4149,1513,0.5157869366112317,0.5003267735422395,2176,0,138
+union,gm_bary_raw_pass + two-tier m10,ref A,5-19,10341,1292,0.5169712793733682,0.48655187744139705,2176,0,138
+union,gm_bary_raw_pass + two-tier m10,ref A,>= 20,6121,107,0.3252736480967162,0.33766037005543126,2176,0,138
+union,gm_bary_raw_pass + two-tier m10,ref A,5-9,6363,978,0.5231808895175232,0.4909173907906938,2176,0,138
+union,gm_bary_raw_pass + two-tier m10,ref A,10-19,3978,314,0.5070387129210658,0.4729548326783007,2176,0,138
+union,gm_bary_raw_pass_absorb,ref A,2-4 (ref A),5989,2278,0.5463349474035732,0.5250776190102407,799,0,138
+union,gm_bary_raw_pass_absorb,ref A,"2-4, matched candidates",4799,2095,0.6799333194415503,0.5707049241552882,799,0,138
+union,gm_bary_raw_pass_absorb,ref A,all labeled,22451,3677,0.4704912921473431,0.5072669337997906,799,0,138
+union,gm_bary_raw_pass_absorb,ref B,2-4 (ref B),5257,1970,0.5427049648088264,0.5181428191594142,799,0,138
+union,gm_bary_raw_pass_absorb,ref B,"2-4, matched candidates (ref B)",4206,1815,0.6757013789824061,0.5620246209792723,799,0,138
+union,gm_bary_raw_pass_absorb,ref B,all labeled (ref B),20511,3281,0.468285310321291,0.5072140365024687,799,0,138
+union,gm_bary_raw_pass_absorb,ref A,"2-4 (ref A), ascending",919,361,0.6354733405875952,0.6536524724890376,799,0,138
+union,gm_bary_raw_pass_absorb,ref A,"2-4 (ref A), descending",891,397,0.691358024691358,0.6933310462277716,799,0,138
+union,gm_bary_raw_pass_absorb,ref A,"2-4 (ref A), intrinsic",3837,1383,0.5016940317956737,0.45193544088553944,799,0,138
+union,gm_bary_raw_pass_absorb,ref A,"2-4 (ref A), motor",225,97,0.4488888888888889,0.473801341842579,799,0,138
+union,gm_bary_raw_pass_absorb,ref A,"2-4 (ref A), other",43,16,0.3023255813953488,0.19904306220095694,799,0,138
+union,gm_bary_raw_pass_absorb,ref A,"2-4 (ref A), sensory",74,24,0.44594594594594594,0.4473214285714285,799,0,138
+union,gm_bary_raw_pass_absorb,ref A,"2-4 (ref A), passing",1840,766,0.6570652173913043,0.6715243271379041,799,0,138
+union,gm_bary_raw_pass_absorb,ref A,"2-4 (ref A), not passing",4149,1513,0.49722824777054714,0.45091816359398157,799,0,138
+union,gm_bary_raw_pass_absorb,ref A,5-19,10341,1292,0.5176481964993714,0.4889866920849895,799,0,138
+union,gm_bary_raw_pass_absorb,ref A,>= 20,6121,107,0.3166149322006208,0.34881208694107435,799,0,138
+union,gm_bary_raw_pass_absorb,ref A,5-9,6363,978,0.5167373880245167,0.49031670262214033,799,0,138
+union,gm_bary_raw_pass_absorb,ref A,10-19,3978,314,0.5191050779286074,0.4848441751890229,799,0,138
+union,gm_bary_raw_pass_absorb + two-tier m10,ref A,2-4 (ref A),5989,2278,0.5463349474035732,0.5250776190102407,799,0,138
+union,gm_bary_raw_pass_absorb + two-tier m10,ref A,"2-4, matched candidates",4799,2095,0.6799333194415503,0.5707049241552882,799,0,138
+union,gm_bary_raw_pass_absorb + two-tier m10,ref A,all labeled,22451,3677,0.46728430804863924,0.5055999896846342,799,0,138
+union,gm_bary_raw_pass_absorb + two-tier m10,ref B,2-4 (ref B),5257,1970,0.5427049648088264,0.5181428191594142,799,0,138
+union,gm_bary_raw_pass_absorb + two-tier m10,ref B,"2-4, matched candidates (ref B)",4206,1815,0.6757013789824061,0.5620246209792723,799,0,138
+union,gm_bary_raw_pass_absorb + two-tier m10,ref B,all labeled (ref B),20511,3281,0.4643849641655697,0.5055875503907349,799,0,138
+union,gm_bary_raw_pass_absorb + two-tier m10,ref A,"2-4 (ref A), ascending",919,361,0.6354733405875952,0.6536524724890376,799,0,138
+union,gm_bary_raw_pass_absorb + two-tier m10,ref A,"2-4 (ref A), descending",891,397,0.691358024691358,0.6933310462277716,799,0,138
+union,gm_bary_raw_pass_absorb + two-tier m10,ref A,"2-4 (ref A), intrinsic",3837,1383,0.5016940317956737,0.45193544088553944,799,0,138
+union,gm_bary_raw_pass_absorb + two-tier m10,ref A,"2-4 (ref A), motor",225,97,0.4488888888888889,0.473801341842579,799,0,138
+union,gm_bary_raw_pass_absorb + two-tier m10,ref A,"2-4 (ref A), other",43,16,0.3023255813953488,0.19904306220095694,799,0,138
+union,gm_bary_raw_pass_absorb + two-tier m10,ref A,"2-4 (ref A), sensory",74,24,0.44594594594594594,0.4473214285714285,799,0,138
+union,gm_bary_raw_pass_absorb + two-tier m10,ref A,"2-4 (ref A), passing",1840,766,0.6570652173913043,0.6715243271379041,799,0,138
+union,gm_bary_raw_pass_absorb + two-tier m10,ref A,"2-4 (ref A), not passing",4149,1513,0.49722824777054714,0.45091816359398157,799,0,138
+union,gm_bary_raw_pass_absorb + two-tier m10,ref A,5-19,10341,1292,0.5084614640750411,0.4853145218208803,799,0,138
+union,gm_bary_raw_pass_absorb + two-tier m10,ref A,>= 20,6121,107,0.32037248815553016,0.3358690072195681,799,0,138
+union,gm_bary_raw_pass_absorb + two-tier m10,ref A,5-9,6363,978,0.5167373880245167,0.49031670262214033,799,0,138
+union,gm_bary_raw_pass_absorb + two-tier m10,ref A,10-19,3978,314,0.4952237305178482,0.4697344809812874,799,0,138
+union,gm_bary_raw_pass_absorb_reject,ref A,2-4 (ref A),5989,2278,0.5481716480213725,0.5261024544246609,893,94,138
+union,gm_bary_raw_pass_absorb_reject,ref A,"2-4, matched candidates",4799,2095,0.682225463638258,0.5718192797992255,893,94,138
+union,gm_bary_raw_pass_absorb_reject,ref A,all labeled,22451,3677,0.4710257894971271,0.5078579856536052,893,94,138
+union,gm_bary_raw_pass_absorb_reject,ref B,2-4 (ref B),5257,1970,0.5444169678523872,0.5193521935413773,893,94,138
+union,gm_bary_raw_pass_absorb_reject,ref B,"2-4, matched candidates (ref B)",4206,1815,0.6778411792677128,0.5633372752671333,893,94,138
+union,gm_bary_raw_pass_absorb_reject,ref B,all labeled (ref B),20511,3281,0.46877285359075616,0.5078950712525002,893,94,138
+union,gm_bary_raw_pass_absorb_reject,ref A,"2-4 (ref A), ascending",919,361,0.6452665941240479,0.6605974665531452,893,94,138
+union,gm_bary_raw_pass_absorb_reject,ref A,"2-4 (ref A), descending",891,397,0.6936026936026936,0.694088894592673,893,94,138
+union,gm_bary_raw_pass_absorb_reject,ref A,"2-4 (ref A), intrinsic",3837,1383,0.5016940317956737,0.4517426233391427,893,94,138
+union,gm_bary_raw_pass_absorb_reject,ref A,"2-4 (ref A), motor",225,97,0.4488888888888889,0.47208312878415976,893,94,138
+union,gm_bary_raw_pass_absorb_reject,ref A,"2-4 (ref A), other",43,16,0.3023255813953488,0.19653679653679654,893,94,138
+union,gm_bary_raw_pass_absorb_reject,ref A,"2-4 (ref A), sensory",74,24,0.44594594594594594,0.4473214285714285,893,94,138
+union,gm_bary_raw_pass_absorb_reject,ref A,"2-4 (ref A), passing",1840,766,0.6630434782608695,0.6751901347854351,893,94,138
+union,gm_bary_raw_pass_absorb_reject,ref A,"2-4 (ref A), not passing",4149,1513,0.49722824777054714,0.45060525309566046,893,94,138
+union,gm_bary_raw_pass_absorb_reject,ref A,5-19,10341,1292,0.5177448989459433,0.4888920856673062,893,94,138
+union,gm_bary_raw_pass_absorb_reject,ref A,>= 20,6121,107,0.3166149322006208,0.34844717183896173,893,94,138
+union,gm_bary_raw_pass_absorb_reject,ref A,5-9,6363,978,0.5167373880245167,0.4901483961680197,893,94,138
+union,gm_bary_raw_pass_absorb_reject,ref A,10-19,3978,314,0.5193564605329312,0.48497911856635784,893,94,138
+union,gm_bary_raw_pass_absorb_reject + two-tier m10,ref A,2-4 (ref A),5989,2278,0.5481716480213725,0.5261024544246609,893,94,138
+union,gm_bary_raw_pass_absorb_reject + two-tier m10,ref A,"2-4, matched candidates",4799,2095,0.682225463638258,0.5718192797992255,893,94,138
+union,gm_bary_raw_pass_absorb_reject + two-tier m10,ref A,all labeled,22451,3677,0.46781880539842324,0.5061883044137934,893,94,138
+union,gm_bary_raw_pass_absorb_reject + two-tier m10,ref B,2-4 (ref B),5257,1970,0.5444169678523872,0.5193521935413773,893,94,138
+union,gm_bary_raw_pass_absorb_reject + two-tier m10,ref B,"2-4, matched candidates (ref B)",4206,1815,0.6778411792677128,0.5633372752671333,893,94,138
+union,gm_bary_raw_pass_absorb_reject + two-tier m10,ref B,all labeled (ref B),20511,3281,0.46487250743503483,0.5062787819935387,893,94,138
+union,gm_bary_raw_pass_absorb_reject + two-tier m10,ref A,"2-4 (ref A), ascending",919,361,0.6452665941240479,0.6605974665531452,893,94,138
+union,gm_bary_raw_pass_absorb_reject + two-tier m10,ref A,"2-4 (ref A), descending",891,397,0.6936026936026936,0.694088894592673,893,94,138
+union,gm_bary_raw_pass_absorb_reject + two-tier m10,ref A,"2-4 (ref A), intrinsic",3837,1383,0.5016940317956737,0.4517426233391427,893,94,138
+union,gm_bary_raw_pass_absorb_reject + two-tier m10,ref A,"2-4 (ref A), motor",225,97,0.4488888888888889,0.47208312878415976,893,94,138
+union,gm_bary_raw_pass_absorb_reject + two-tier m10,ref A,"2-4 (ref A), other",43,16,0.3023255813953488,0.19653679653679654,893,94,138
+union,gm_bary_raw_pass_absorb_reject + two-tier m10,ref A,"2-4 (ref A), sensory",74,24,0.44594594594594594,0.4473214285714285,893,94,138
+union,gm_bary_raw_pass_absorb_reject + two-tier m10,ref A,"2-4 (ref A), passing",1840,766,0.6630434782608695,0.6751901347854351,893,94,138
+union,gm_bary_raw_pass_absorb_reject + two-tier m10,ref A,"2-4 (ref A), not passing",4149,1513,0.49722824777054714,0.45060525309566046,893,94,138
+union,gm_bary_raw_pass_absorb_reject + two-tier m10,ref A,5-19,10341,1292,0.508558166521613,0.4852045604337342,893,94,138
+union,gm_bary_raw_pass_absorb_reject + two-tier m10,ref A,>= 20,6121,107,0.32037248815553016,0.3355954399042629,893,94,138
+union,gm_bary_raw_pass_absorb_reject + two-tier m10,ref A,5-9,6363,978,0.5167373880245167,0.4901483961680197,893,94,138
+union,gm_bary_raw_pass_absorb_reject + two-tier m10,ref A,10-19,3978,314,0.49547511312217196,0.4698062440384119,893,94,138
