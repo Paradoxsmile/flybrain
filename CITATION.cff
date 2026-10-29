@@ -15,7 +15,8 @@ authors:
   - family-names: Vogt
     given-names: Maximilian
     orcid: "https://orcid.org/0009-0005-4171-3538"
-version: 1.0.0
+version: 1.0.1
+doi: 10.5281/zenodo.23768609
 date-released: 2026-10-29
 repository-code: "https://github.com/Paradoxsmile/flybrain"
 license: MIT
