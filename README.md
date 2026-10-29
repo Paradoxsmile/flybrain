@@ -1,6 +1,7 @@
 # flybrain
 
 [![CI](https://github.com/Paradoxsmile/flybrain/actions/workflows/ci.yml/badge.svg)](https://github.com/Paradoxsmile/flybrain/actions/workflows/ci.yml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23768609.svg)](https://doi.org/10.5281/zenodo.23768609)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](pyproject.toml)
 [![Data: FlyWire FAFB v783](https://img.shields.io/badge/data-FlyWire%20FAFB%20v783-lightgrey.svg)](https://codex.flywire.ai)
@@ -116,6 +117,8 @@ Citation metadata are in [CITATION.cff](CITATION.cff) (GitHub's "Cite this repos
   url    = {https://github.com/Paradoxsmile/flybrain}
 }
 ```
+
+The code is archived on Zenodo: [doi:10.5281/zenodo.23768609](https://doi.org/10.5281/zenodo.23768609) (all versions; each release also has its own DOI).
 
 Please also cite the data sources: FlyWire (Dorkenwald et al., 2024; Schlegel et al., 2024), MCNS (Berg et al., 2026), BANC (Bates et al., 2026), the hemibrain (Scheffer et al., 2020) and MANC (Takemura et al., 2024; Marin et al., 2024).
 
