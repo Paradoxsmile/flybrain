@@ -58,7 +58,7 @@ We type these rare neurons in a target in which no neuron is labeled, using only
 
 \item \textbf{The gain holds on held-out connectomes, and candidate selection is the bottleneck.} In three pre-registered tests, on BANC's brain and from MANC to the nerve cords of BANC and MCNS, the two stages gained 10–21 points over the GNN alone (Section~\ref{sec:res-test}). Matching with perfectly chosen candidates would gain another 5–25 points (Section~\ref{sec:res-cand}).
 
-\item \textbf{Wiring complements morphology.} The two err on different neurons. Combined with unreviewed automatic morphology matches, wiring adds little where these matches are good (BANC brain, +2.3 points in a pre-specified analysis that missed its 3-point rule) and a lot where they are weak (BANC cord, +23 points). BANC's reference types are partly NBLAST's own answers, which tilts the comparison toward morphology (Section~\ref{sec:res-morph}).
+\item \textbf{Wiring complements morphology.} The two err on different neurons. Combined with unreviewed automatic morphology matches, wiring adds little where these matches are good (BANC brain, +2.3 points in a pre-specified analysis that missed its 3-point rule) and a lot where they are weak (BANC cord, +23 points). Morphology does not make the GNN redundant: without its candidates, the combination falls below NBLAST alone on the brain. BANC's reference types are partly NBLAST's own answers, which tilts the comparison toward morphology (Section~\ref{sec:res-morph}).
 
 \end{enumerate}
 
@@ -270,6 +270,7 @@ Two-stage, morphology-augmented candidates & 62.6 & 64.7 \\
 \multicolumn{3}{l}{\emph{Exploratory combinations}} \\
 Combination, broad candidates (best of six) & 72.5 & 64.9 \\
 Combination, morphology-augmented candidates & 70.6 & 65.1 \\
+Combination, NBLAST-only candidates (no GNN; run last) & 58.9 & 45.6 \\
 \midrule
 \multicolumn{3}{l}{\emph{Pre-specified analysis: seeded matching (labels seen before)}} \\
 Two-stage, seeded & 61.6 & 55.4 \\
@@ -286,6 +287,8 @@ Rule: gain ≥ 3 points, interval above 0 & not met & met (secondary) \\
 
 Seeding itself hurt. Without seeds, on the same candidates, the combination reached 70.6~\% (brain) and 65.1~\% (cord) instead of 68.7 and 53.7~\%. About 16~\% of the brain seeds and 32~\% of the cord seeds carry a wrong type, and fixing them prevents the matching from correcting them.
 
+\textbf{Is the GNN still needed when morphology is available?} To find out, we ran the matching without stage 1 (exploratory, after the pre-specified analysis). The candidates were only the neurons whose NBLAST match has a rare type; they contain 85~\% of the brain's rare-type neurons and 63~\% of the cord's, against 95 and 90~\% when the GNN's candidates are added. Each neuron took the matched type where the matching assigned one and NBLAST's type elsewhere, so no step used the GNN. This GNN-free combination reached 58.9~\% on the brain, 7.6 points below NBLAST alone, and 45.6~\% in the cord. With the GNN's candidates added, the same combination reached 70.6 and 65.1~\%: the GNN contributes 11.7 points on the brain (95~\% interval 11.0–12.4) and 19.5 in the cord (18.2–20.8). A likely reason is that one-to-one matching on a candidate set that lacks many true partners forces wrong pairs, and the GNN supplies the missing neurons.
+
 \begin{figure}[tbp]
 \centering
 \includegraphics[width=\linewidth]{figures/morphology.pdf}
@@ -300,7 +303,7 @@ The pipeline relies on stage 1 transferring without labels. We developed and tes
 
 \section{Discussion}
 
-\textbf{Pairing beats classifying for rare types.} A classifier has seen one or two examples of a rare type, while graph matching uses the wiring among all candidates at once. Within FlyWire, on the same candidates, matching wins by 12 points; between animals, the transferred GNN's role is to decide which neurons to match. This division of labor held in three pre-registered tests: across sex, at a third of the source's density, and from brain to nerve cord with a new source. These are also the types a hand-labeling budget reaches last. Candidate selection is the bottleneck, and one-to-one matching ignores that type sizes differ between animals; a looser assignment failed, because candidates piled onto a few well-connected neurons.
+\textbf{Pairing beats classifying for rare types.} A classifier has seen one or two examples of a rare type, while graph matching uses the wiring among all candidates at once. Within FlyWire, on the same candidates, matching wins by 12 points; between animals, the transferred GNN's role is to decide which neurons to match. This division of labor held in three pre-registered tests: across sex, at a third of the source's density, and from brain to nerve cord with a new source. These are also the types a hand-labeling budget reaches last. Candidate selection is the bottleneck, and the GNN remains needed for it when morphology matches exist: without its candidates, matching combined with NBLAST fell below NBLAST alone on the brain. One-to-one matching ignores that type sizes differ between animals; a looser assignment failed, because candidates piled onto a few well-connected neurons.
 
 \textbf{Wiring next to morphology.} In practice a new reconstruction is typed from morphology first, and our tests support a narrower claim than the exploratory analysis suggested. Wiring complements morphology: the two err on different neurons. We did not show that they are statistically independent, and our references are built from both. On BANC's brain, where unreviewed NBLAST matches are good, wiring adds little to them: 2.3 points in the pre-specified analysis, which missed its 3-point rule, and up to 6 points in exploratory combinations. In BANC's cord, where these matches confuse sibling types and classes, it adds a lot (23 points over unreviewed NBLAST, not over reviewed morphology matching). Where wiring and morphology agree, the type is almost always right (95~\%), which gives a cheap confidence flag for review, and morphology in turn fixes the wiring pipeline's bottleneck by raising candidate recall from 70 to 95~\%. Seeding the matching with hard NBLAST matches hurt; using NBLAST as a soft prior term in the matching is the natural next step. The size of the effect on BANC is uncertain in both directions, because the reference is partly NBLAST's own answer.
 
@@ -549,7 +552,7 @@ By accuracy, the GNN is worth about 1.3~\% hand labels on all three references; 
 \begin{table}[htbp]
 \centering
 \footnotesize
-\caption{Macro-F1 (mean F1 over the true types present) for the rare-type tables of the main text; accuracies are given there. –: not run.}\label{tab:S-f1}
+\caption{Macro-F1 (mean F1 over the true types present) for the rare-type tables of the main text; accuracies are given there. –: not run, or not computed (the GNN-free combination leaves some neurons without a type).}\label{tab:S-f1}
 \begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.46\linewidth}CCC}
 \toprule
 \multicolumn{4}{l}{\emph{Table~\ref{tab:dev}, development}} \\
@@ -586,6 +589,7 @@ Two-stage, broad candidates & 0.57 & 0.61 & \\
 Two-stage, morphology-augmented candidates & 0.67 & 0.63 & \\
 Combination, broad candidates & 0.68 & 0.59 & \\
 Combination, morphology-augmented candidates & 0.71 & 0.61 & \\
+Combination, NBLAST-only candidates (no GNN) & – & – & \\
 Two-stage, seeded & 0.65 & 0.53 & \\
 Combination, seeded (pre-registered) & 0.69 & 0.51 & \\
 \bottomrule
