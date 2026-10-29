@@ -374,9 +374,9 @@ def morphology_figure(out: Path) -> None:
     """Wiring and morphology on BANC's rare types: (a) the pre-registered combination against
     NBLAST alone, brain and cord; (b) the brain split by whether review kept NBLAST's top hit."""
     series = [
-        ("NBLAST", "NBLAST alone (morphology)", ORANGE),
+        ("NBLAST", "NBLAST alone (unreviewed)", ORANGE),
         ("two-stage [unseeded]", "Two-stage, morphology-augmented candidates", BLUE),
-        ("two-stage matched, else NBLAST [seeded]", "Combination (pre-registered)", GREEN),
+        ("two-stage matched, else NBLAST [seeded]", "Combination (pre-specified)", GREEN),
     ]
     groups = [
         (

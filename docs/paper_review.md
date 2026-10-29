@@ -120,3 +120,12 @@ All four steps were applied at the user's request ("Everything").
 - **Language (E1–E6).** Fewer numbers per sentence, no internal names in the main text ("sandbox", "rare stratum", "≥ 10 model", "reference A/B"), shorter title, no "Draft" label. Affiliation and contact are still missing: they need the author's input.
 - **References (F1–F4).** Full author names or first author with initials, NeuNet's full title, and new citations for seeded graph matching, Sinkhorn, PyTorch Geometric and SciPy. The fifth protocol is listed in Code and data availability.
 - One correction found on the way: old Table 8 gave macro-F1 0.30 for NBLAST in the cord; the result file gives 0.29.
+
+## Second round (external comments, 2026-10-29)
+
+- "Independent signal" → "complementary" (abstract, contribution 3, Discussion, Conclusion); the Discussion says the two err on different neurons, not that they are statistically independent.
+- The fifth protocol is called a pre-specified analysis (labels seen before) in the abstract, Methods, Section 4.4, Table 6, Table 7, Figure 2, Discussion, Conclusion, README and the reproduction map.
+- Why seeding: all six unseeded combinations, including the second best (70.6 %), had known results, so registering one of them would not have removed the selection concern; seeding tests whether confident morphology matches can anchor the matching.
+- "+23 points over unreviewed NBLAST" in the abstract, Discussion and Figure 2.
+- Table 4 and 6 captions and the Limitations state that the intervals resample types only and leave out the run-to-run variation of stage 1 (one run per target, three GNN seeds combined) and of the matching.
+- All commit hashes in Table 7 and in the reproduction map are on the public `main`. `docs/reproduce.md` covers Table 6 and Figure 2 (`results/seeded_matching/metrics.csv`). The Zenodo DOI needs a GitHub release archived by Zenodo, which only the author can create.
