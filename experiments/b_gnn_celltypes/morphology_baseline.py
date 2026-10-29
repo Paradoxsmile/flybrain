@@ -9,10 +9,12 @@ same neurons and scored like graph_matching_mcns.py (accuracy; macro-F1 over the
 - stage 1: the label-free GNN pipeline (predictions.parquet, `pred`);
 - NBLAST: the NBLAST match's source type, no prediction where there is no match;
 - NBLAST, else stage 1;
-- per saved matching [tag] (TARGETS; `gnn` and `union` candidates, and `nblast_union` of A2-ii):
-  two-stage (stage 1 with the matched candidates' types), NBLAST, else two-stage (A2-i), and
-  two-stage matched, else NBLAST (the matching's type where it assigned a source neuron, NBLAST
-  elsewhere, stage 1 where neither).
+- per saved matching [tag] (TARGETS; `gnn` and `union` candidates, `nblast_union` of A2-ii, and
+  `nblast_only`, the GNN-free control): two-stage (stage 1 with the matched candidates' types),
+  NBLAST, else two-stage (A2-i), and two-stage matched, else NBLAST (the matching's type where it
+  assigned a source neuron, NBLAST elsewhere, stage 1 where neither);
+- for `nblast_only` also matched, else NBLAST, no GNN: as above, but no prediction where neither
+  the matching nor NBLAST gives one, so no step uses the GNN.
 
 agreement.csv: on the ref-A 2-4 stratum, accuracy where NBLAST and the first matching agree or
 disagree, and each combination's accuracy minus NBLAST alone with a 95 % interval from resampling
@@ -24,7 +26,10 @@ restricted to the source label space (types with >= 2 source neurons).
 
 --candidates-out also writes A2-ii's candidate set: the stage-1 `union` candidates plus the
 neurons whose NBLAST type is a 2-4-neuron source type, as candidates_nblast_union.parquet in the
-stage-1 directory, for graph_matching_mcns.py --candidates file:nblast_union.
+stage-1 directory, for graph_matching_mcns.py --candidates file:nblast_union; and the GNN-free
+control, only the neurons whose NBLAST type is a 2-4-neuron source type, as
+candidates_nblast_only.parquet (--candidates file:nblast_only; exploratory, added after the
+pre-specified analysis of docs/preregistration_confirmatory.md).
 
 Writes results/morphology_baseline/{metrics.csv, agreement.csv}.
 
@@ -56,6 +61,7 @@ TARGETS = {
             "gnn": "graph_matching_banc/matches_gnn_gm_bary.parquet",
             "union": "morphology_baseline/gm_banc/matches_union_gm_bary.parquet",
             "nblast_union": "morphology_baseline/gm_banc/matches_nblast_union_gm_bary.parquet",
+            "nblast_only": "morphology_baseline/gm_banc/matches_nblast_only_gm_bary.parquet",
         },
         nblast="fafb_nblast_match",
         ref_b="fafb_cell_type",
@@ -68,6 +74,9 @@ TARGETS = {
             "union": "graph_matching_banc_cord/matches_union_gm_bary_pass.parquet",
             "nblast_union": (
                 "morphology_baseline/gm_banc_cord/matches_nblast_union_gm_bary_pass.parquet"
+            ),
+            "nblast_only": (
+                "morphology_baseline/gm_banc_cord/matches_nblast_only_gm_bary_pass.parquet"
             ),
         },
         nblast="manc_nblast_match",
@@ -108,11 +117,16 @@ def labelings(stage1: pd.DataFrame, matches: pd.DataFrame, nb: np.ndarray, tag: 
     else:  # older matchings (BANC brain): assigned approximated as "matching changed the type"
         assigned[k] = (matches.pred != matches.stage1).to_numpy()
     has = pd.notna(nb)
-    return {
+    out = {
         f"two-stage [{tag}]": two,
         f"NBLAST, else two-stage [{tag}]": np.where(has, nb, two),
         f"two-stage matched, else NBLAST [{tag}]": np.where(assigned, two, np.where(has, nb, s1)),
     }
+    if tag == "nblast_only":  # GNN-free: no stage-1 fallback
+        out[f"matched, else NBLAST, no GNN [{tag}]"] = np.where(
+            assigned, two, np.where(has, nb, None)
+        )
+    return out
 
 
 def bootstrap_delta(truth, a, b, subset, n_boot: int = 2000, seed: int = 0) -> tuple:
@@ -202,13 +216,13 @@ def run(target: str, cfg: dict, meta: pd.DataFrame, write_candidates: bool):
     # A4's delta: each combination minus NBLAST alone (ref A, 2-4), 95 % CI over types
     for method in labs:
         if "else NBLAST" in method or "NBLAST, else two-stage" in method:
-            d, lo, hi = bootstrap_delta(ref_a, labs[method], labs["NBLAST"], in_rare)
+            delta, lo, hi = bootstrap_delta(ref_a, labs[method], labs["NBLAST"], in_rare)
             agree.append(
                 {
                     "target": target,
                     "cell": f"delta vs NBLAST: {method}",
                     "n": int(in_rare.sum()),
-                    "delta": d,
+                    "delta": delta,
                     "ci_low": lo,
                     "ci_high": hi,
                 }
@@ -229,6 +243,15 @@ def run(target: str, cfg: dict, meta: pd.DataFrame, write_candidates: bool):
         )
         pd.DataFrame({"root_id": stage1.root_id[cand]}).to_parquet(
             d / "candidates_nblast_union.parquet"
+        )
+        only = rare(nb, sizes)  # GNN-free control: NBLAST's rare-type neurons alone
+        print(
+            f"{target}: NBLAST-only candidates {only[in_rare].mean():.1%} recall, "
+            f"{only.sum()} candidates",
+            flush=True,
+        )
+        pd.DataFrame({"root_id": stage1.root_id[only]}).to_parquet(
+            d / "candidates_nblast_only.parquet"
         )
     return rows, agree
 

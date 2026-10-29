@@ -59,6 +59,26 @@ banc,ref A,"two-stage matched, else NBLAST [nblast_union]","2-4, with NBLAST mat
 banc,ref A,"two-stage matched, else NBLAST [nblast_union]","2-4, without NBLAST match",1024,880,0.6025390625,0.697964383388057
 banc,ref A,"two-stage matched, else NBLAST [nblast_union]",all labeled,88639,7380,0.6116494996559076,0.6938687887157474
 banc,ref A,"two-stage matched, else NBLAST [nblast_union]","2-4, central brain",13980,5190,0.7017882689556509,0.7078115031012114
+banc,ref A,two-stage [nblast_only],2-4,14512,5416,0.5986769570011026,0.6211089188276997
+banc,ref A,two-stage [nblast_only],"2-4, with NBLAST match",13488,5303,0.6199584816132859,0.628560843947402
+banc,ref A,two-stage [nblast_only],"2-4, without NBLAST match",1024,880,0.318359375,0.45937685371106857
+banc,ref A,two-stage [nblast_only],all labeled,88639,7380,0.5372127393133947,0.5142805345870022
+banc,ref A,two-stage [nblast_only],"2-4, central brain",13980,5190,0.5951359084406295,0.620793026136034
+banc,ref A,"NBLAST, else two-stage [nblast_only]",2-4,14512,5416,0.6870865490628445,0.6602235500428651
+banc,ref A,"NBLAST, else two-stage [nblast_only]","2-4, with NBLAST match",13488,5303,0.7150800711743772,0.666400291727731
+banc,ref A,"NBLAST, else two-stage [nblast_only]","2-4, without NBLAST match",1024,880,0.318359375,0.5769482782556637
+banc,ref A,"NBLAST, else two-stage [nblast_only]",all labeled,88639,7380,0.6247250081792439,0.6720422180217405
+banc,ref A,"NBLAST, else two-stage [nblast_only]","2-4, central brain",13980,5190,0.6856938483547925,0.6583269077318037
+banc,ref A,"two-stage matched, else NBLAST [nblast_only]",2-4,14512,5416,0.6110115766262404,0.6417266200289207
+banc,ref A,"two-stage matched, else NBLAST [nblast_only]","2-4, with NBLAST match",13488,5303,0.6332295373665481,0.6494135945362158
+banc,ref A,"two-stage matched, else NBLAST [nblast_only]","2-4, without NBLAST match",1024,880,0.318359375,0.47670186212527194
+banc,ref A,"two-stage matched, else NBLAST [nblast_only]",all labeled,88639,7380,0.6122699940206907,0.6584677772418593
+banc,ref A,"two-stage matched, else NBLAST [nblast_only]","2-4, central brain",13980,5190,0.6083690987124464,0.6422815193596041
+banc,ref A,"matched, else NBLAST, no GNN [nblast_only]",2-4,14512,5416,0.5885474090407938,0.6308345650545171
+banc,ref A,"matched, else NBLAST, no GNN [nblast_only]","2-4, with NBLAST match",13488,5303,0.6332295373665481,0.6442768252565086
+banc,ref A,"matched, else NBLAST, no GNN [nblast_only]","2-4, without NBLAST match",1024,880,0.0,0.37434538653016
+banc,ref A,"matched, else NBLAST, no GNN [nblast_only]",all labeled,88639,7380,0.5513148839675538,0.6493834159272035
+banc,ref A,"matched, else NBLAST, no GNN [nblast_only]","2-4, central brain",13980,5190,0.5918454935622317,0.6362465427754948
 banc,ref B,stage 1 (label-free GNN),2-4,13848,5169,0.21338821490467938,0.18096859278893573
 banc,ref B,stage 1 (label-free GNN),"2-4, with NBLAST match",12991,5085,0.20999153259949196,0.17965545969466376
 banc,ref B,stage 1 (label-free GNN),"2-4, without NBLAST match",857,757,0.26487747957992996,0.22224338291032095
@@ -107,6 +127,22 @@ banc,ref B,"two-stage matched, else NBLAST [nblast_union]",2-4,13848,5169,0.6998
 banc,ref B,"two-stage matched, else NBLAST [nblast_union]","2-4, with NBLAST match",12991,5085,0.7085674697867754,0.7099511892916489
 banc,ref B,"two-stage matched, else NBLAST [nblast_union]","2-4, without NBLAST match",857,757,0.5682613768961493,0.6792716302264953
 banc,ref B,"two-stage matched, else NBLAST [nblast_union]",all labeled,35831,6865,0.7129580530825264,0.6898462526662207
+banc,ref B,two-stage [nblast_only],2-4,13848,5169,0.5971259387637204,0.6241700533122161
+banc,ref B,two-stage [nblast_only],"2-4, with NBLAST match",12991,5085,0.6190439535062736,0.6311177823637686
+banc,ref B,two-stage [nblast_only],"2-4, without NBLAST match",857,757,0.26487747957992996,0.4427128303989672
+banc,ref B,two-stage [nblast_only],all labeled,35831,6865,0.3975886801931289,0.5126965236660845
+banc,ref B,"NBLAST, else two-stage [nblast_only]",2-4,13848,5169,0.6845031773541306,0.6588086632694131
+banc,ref B,"NBLAST, else two-stage [nblast_only]","2-4, with NBLAST match",12991,5085,0.7121853590947579,0.6647883278478393
+banc,ref B,"NBLAST, else two-stage [nblast_only]","2-4, without NBLAST match",857,757,0.26487747957992996,0.5603846753787297
+banc,ref B,"NBLAST, else two-stage [nblast_only]",all labeled,35831,6865,0.7471184170132008,0.6727832752026485
+banc,ref B,"two-stage matched, else NBLAST [nblast_only]",2-4,13848,5169,0.6068024263431543,0.6435753601587063
+banc,ref B,"two-stage matched, else NBLAST [nblast_only]","2-4, with NBLAST match",12991,5085,0.6293587868524363,0.6506512060925661
+banc,ref B,"two-stage matched, else NBLAST [nblast_only]","2-4, without NBLAST match",857,757,0.26487747957992996,0.46260817954688577
+banc,ref B,"two-stage matched, else NBLAST [nblast_only]",all labeled,35831,6865,0.7170885546035556,0.6613133635086582
+banc,ref B,"matched, else NBLAST, no GNN [nblast_only]",2-4,13848,5169,0.5904101675332178,0.6368779913389683
+banc,ref B,"matched, else NBLAST, no GNN [nblast_only]","2-4, with NBLAST match",12991,5085,0.6293587868524363,0.6473986897209689
+banc,ref B,"matched, else NBLAST, no GNN [nblast_only]","2-4, without NBLAST match",857,757,0.0,0.3814515994471089
+banc,ref B,"matched, else NBLAST, no GNN [nblast_only]",all labeled,35831,6865,0.7067623008009823,0.6569637278471961
 banc_cord,ref A,stage 1 (label-free GNN),2-4,5989,2278,0.3952245783937218,0.3567081946164877
 banc_cord,ref A,stage 1 (label-free GNN),"2-4, with NBLAST match",5917,2275,0.3944566503295589,0.3568928647632346
 banc_cord,ref A,stage 1 (label-free GNN),"2-4, without NBLAST match",72,68,0.4583333333333333,0.39598930481283423
@@ -143,6 +179,22 @@ banc_cord,ref A,"two-stage matched, else NBLAST [nblast_union]",2-4,5989,2278,0.
 banc_cord,ref A,"two-stage matched, else NBLAST [nblast_union]","2-4, with NBLAST match",5917,2275,0.6504985634612135,0.6094260324848492
 banc_cord,ref A,"two-stage matched, else NBLAST [nblast_union]","2-4, without NBLAST match",72,68,0.6527777777777778,0.6445427121897709
 banc_cord,ref A,"two-stage matched, else NBLAST [nblast_union]",all labeled,22451,3677,0.40234288004988644,0.4907093397202209
+banc_cord,ref A,two-stage [nblast_only],2-4,5989,2278,0.5748872933711805,0.5254259112312312
+banc_cord,ref A,two-stage [nblast_only],"2-4, with NBLAST match",5917,2275,0.5763055602501268,0.5258843483302907
+banc_cord,ref A,two-stage [nblast_only],"2-4, without NBLAST match",72,68,0.4583333333333333,0.4905822935234698
+banc_cord,ref A,two-stage [nblast_only],all labeled,22451,3677,0.4503585586388134,0.4940019538046959
+banc_cord,ref A,"NBLAST, else two-stage [nblast_only]",2-4,5989,2278,0.3109033227583904,0.29948222578423833
+banc_cord,ref A,"NBLAST, else two-stage [nblast_only]","2-4, with NBLAST match",5917,2275,0.3091093459523407,0.2993643268878366
+banc_cord,ref A,"NBLAST, else two-stage [nblast_only]","2-4, without NBLAST match",72,68,0.4583333333333333,0.410603938545115
+banc_cord,ref A,"NBLAST, else two-stage [nblast_only]",all labeled,22451,3677,0.32332635517348896,0.2987377602407495
+banc_cord,ref A,"two-stage matched, else NBLAST [nblast_only]",2-4,5989,2278,0.4613458006344966,0.4822097560206324
+banc_cord,ref A,"two-stage matched, else NBLAST [nblast_only]","2-4, with NBLAST match",5917,2275,0.4613824573263478,0.48247933665128234
+banc_cord,ref A,"two-stage matched, else NBLAST [nblast_only]","2-4, without NBLAST match",72,68,0.4583333333333333,0.4763655462184873
+banc_cord,ref A,"two-stage matched, else NBLAST [nblast_only]",all labeled,22451,3677,0.3634581978531023,0.4119423601533156
+banc_cord,ref A,"matched, else NBLAST, no GNN [nblast_only]",2-4,5989,2278,0.4558356987810987,0.47892984161253543
+banc_cord,ref A,"matched, else NBLAST, no GNN [nblast_only]","2-4, with NBLAST match",5917,2275,0.4613824573263478,0.47956139744762877
+banc_cord,ref A,"matched, else NBLAST, no GNN [nblast_only]","2-4, without NBLAST match",72,68,0.0,0.33042717086834733
+banc_cord,ref A,"matched, else NBLAST, no GNN [nblast_only]",all labeled,22451,3677,0.356554273751726,0.40895042265986137
 banc_cord,ref B,stage 1 (label-free GNN),2-4,5257,1970,0.406886056686323,0.3719256361590758
 banc_cord,ref B,stage 1 (label-free GNN),"2-4, with NBLAST match",5186,1969,0.4070574623987659,0.3721145267818078
 banc_cord,ref B,stage 1 (label-free GNN),"2-4, without NBLAST match",71,66,0.39436619718309857,0.39201364292273383
@@ -179,3 +231,19 @@ banc_cord,ref B,"two-stage matched, else NBLAST [nblast_union]",2-4,5257,1970,0.
 banc_cord,ref B,"two-stage matched, else NBLAST [nblast_union]","2-4, with NBLAST match",5186,1969,0.6455842653297339,0.6011002618589251
 banc_cord,ref B,"two-stage matched, else NBLAST [nblast_union]","2-4, without NBLAST match",71,66,0.5774647887323944,0.6030122907395634
 banc_cord,ref B,"two-stage matched, else NBLAST [nblast_union]",all labeled,20596,3353,0.3826956690619538,0.46965320483074713
+banc_cord,ref B,two-stage [nblast_only],2-4,5257,1970,0.5763743579988586,0.5296734125313585
+banc_cord,ref B,two-stage [nblast_only],"2-4, with NBLAST match",5186,1969,0.5788661781720016,0.5299424188353357
+banc_cord,ref B,two-stage [nblast_only],"2-4, without NBLAST match",71,66,0.39436619718309857,0.47832596696233065
+banc_cord,ref B,two-stage [nblast_only],all labeled,20596,3353,0.4456690619537774,0.48797859109230557
+banc_cord,ref B,"NBLAST, else two-stage [nblast_only]",2-4,5257,1970,0.3070192124786,0.30325914347345656
+banc_cord,ref B,"NBLAST, else two-stage [nblast_only]","2-4, with NBLAST match",5186,1969,0.30582337061318937,0.30341316030609927
+banc_cord,ref B,"NBLAST, else two-stage [nblast_only]","2-4, without NBLAST match",71,66,0.39436619718309857,0.3663861939553639
+banc_cord,ref B,"NBLAST, else two-stage [nblast_only]",all labeled,20596,3353,0.30714701883860945,0.2964029385538827
+banc_cord,ref B,"two-stage matched, else NBLAST [nblast_only]",2-4,5257,1970,0.4544416967852387,0.4752226466344113
+banc_cord,ref B,"two-stage matched, else NBLAST [nblast_only]","2-4, with NBLAST match",5186,1969,0.45526417277285,0.4754639989181261
+banc_cord,ref B,"two-stage matched, else NBLAST [nblast_only]","2-4, without NBLAST match",71,66,0.39436619718309857,0.4506008133280861
+banc_cord,ref B,"two-stage matched, else NBLAST [nblast_only]",all labeled,20596,3353,0.34477568459895125,0.3974372663877869
+banc_cord,ref B,"matched, else NBLAST, no GNN [nblast_only]",2-4,5257,1970,0.44911546509416017,0.47263758646051873
+banc_cord,ref B,"matched, else NBLAST, no GNN [nblast_only]","2-4, with NBLAST match",5186,1969,0.45526417277285,0.47287762586451076
+banc_cord,ref B,"matched, else NBLAST, no GNN [nblast_only]","2-4, without NBLAST match",71,66,0.0,0.32855459355459354
+banc_cord,ref B,"matched, else NBLAST, no GNN [nblast_only]",all labeled,20596,3353,0.336473101573121,0.3950140932787006
