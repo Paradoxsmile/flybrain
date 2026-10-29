@@ -105,14 +105,15 @@ Reproducing the connectome-constrained visual-system model of Lappalainen et al.
 
 ## Citation
 
-Citation metadata are in [CITATION.cff](CITATION.cff) (GitHub's "Cite this repository" button), or as BibTeX:
+Citation metadata are in [CITATION.cff](CITATION.cff) (GitHub's "Cite this repository" button). Please cite the paper; once it is posted, its bioRxiv DOI will replace the repository link below. As BibTeX:
 
 ```bibtex
-@misc{vogt2026flybrain,
+@misc{vogt2026rare,
   author = {Vogt, Maximilian},
-  title  = {flybrain: label-free cell typing across fly connectomes from wiring alone},
+  title  = {Typing the rare neurons of an unlabeled connectome by graph matching, guided by a transferred graph neural network},
   year   = {2026},
-  url    = {https://github.com/paradoxsmile/flybrain}
+  note   = {Preprint in preparation},
+  url    = {https://github.com/Paradoxsmile/flybrain}
 }
 ```
 

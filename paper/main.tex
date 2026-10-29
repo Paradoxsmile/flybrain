@@ -82,12 +82,12 @@ We report all four pre-registered tests on held-out data and one pre-specified a
 
 \subsection{Data, labels and references}\label{sec:data}
 
-\textbf{Connectomes} (Table~\ref{tab:1}). FlyWire FAFB v783 is the source for the brain and, with MCNS v1.0, one of the two development connectomes. BANC v888 and the hemibrain v1.2.1 were used only in pre-registered tests. For the nerve-cord test, MANC v1.2.1 (harmonized by the BANC project) is the source and the nerve cords of BANC and MCNS are the targets; no nerve cord was used in development. Neurons are nodes; directed edges are connections weighted by synapse count. FAFB connections have at least 5 synapses (Codex); the other connectomes are aligned to the source by fixed, label-free rules (Supplement~\ref{sec:S-details}).
+\textbf{Connectomes} (Table~\ref{tab:1}). FlyWire FAFB v783 is the source for the brain and, with MCNS v1.0, one of the two development connectomes. BANC v888 and the hemibrain v1.2.1 were used only for testing: in pre-registered tests and, for BANC, afterwards in the analyses of Section~\ref{sec:res-morph}. For the nerve-cord test, MANC v1.2.1 (harmonized by the BANC project) is the source and the nerve cords of BANC and MCNS are the targets; no nerve cord was used in development. Neurons are nodes; directed edges are connections weighted by synapse count. FAFB connections have at least 5 synapses (Codex); the other connectomes are aligned to the source by fixed, label-free rules (Supplement~\ref{sec:S-details}).
 
 \begin{table}[tbp]
 \centering
 \footnotesize
-\caption{Connectomes. Conn./syn.: connections and synapses per neuron, counting connections of at least 5 synapses. Labeled neurons: brains, the 434 FlyWire types with at least 20 neurons; nerve cords, MANC types with at least 2 neurons. Test: used only in pre-registered tests.}\label{tab:1}
+\caption{Connectomes. Conn./syn.: connections and synapses per neuron, counting connections of at least 5 synapses. Labeled neurons: brains, the 434 FlyWire types with at least 20 neurons; nerve cords, MANC types with at least 2 neurons. Test: used only for testing (Section~\ref{sec:data}).}\label{tab:1}
 \setlength{\tabcolsep}{4pt}
 \begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.17\linewidth}>{\raggedright\arraybackslash}p{0.12\linewidth}rrrL}
 \toprule
@@ -164,7 +164,7 @@ At the barycenter the gradient is nearly of rank one and the exact assignment so
 
 \subsection{Evaluation and pre-registration}\label{sec:prereg}
 
-\textbf{Metrics.} Accuracy is the share of labeled target neurons whose predicted type equals the reference type, computed over the rare-type neurons unless stated otherwise. Macro-F1, the mean F1 over the true types present, is given in Supplement~\ref{sec:S-f1}. The 95~\% intervals resample types (2,000 draws; 10,000 for the test of Section~\ref{sec:res-morph}), with the predictions fixed; they do not include the variability of the matching itself.
+\textbf{Metrics.} Accuracy is the share of labeled target neurons whose predicted type equals the reference type, computed over the rare-type neurons unless stated otherwise; a neuron without a predicted type counts as wrong. Macro-F1, the mean F1 over the true types present, is given in Supplement~\ref{sec:S-f1}. The 95~\% intervals resample types (2,000 draws; 10,000 for the analyses of Section~\ref{sec:res-morph}), with the predictions fixed; they do not include the variability of the matching itself.
 
 \textbf{Pre-registration.} For each test on a new dataset, the data, labels, candidates, selection rule, method, reported numbers and explicit expectations were committed to the repository before any model was run on it (Table~\ref{tab:tests}). The protocols allow only data-loading and memory fixes afterwards and require every deviation to be reported. A fifth protocol fixed an analysis of wiring and morphology on BANC in the same way, but BANC's labels had been seen by then; we call it a pre-specified analysis, not a test on held-out data. Between tests, methods were changed only on degraded copies of the development connectomes, whose labels are known: synapse counts binomially thinned before the threshold, cell types removed, the volume restricted to the central brain, or a fraction of neurons cropped (each synapse of a cropped neuron kept with probability 0.1).
 
@@ -287,7 +287,7 @@ Rule: gain ≥ 3 points, interval above 0 & not met & met (secondary) \\
 
 Seeding itself hurt. Without seeds, on the same candidates, the combination reached 70.6~\% (brain) and 65.1~\% (cord) instead of 68.7 and 53.7~\%. About 16~\% of the brain seeds and 32~\% of the cord seeds carry a wrong type, and fixing them prevents the matching from correcting them.
 
-\textbf{Is the GNN still needed when morphology is available?} To find out, we ran the matching without stage 1 (exploratory, after the pre-specified analysis). The candidates were only the neurons whose NBLAST match has a rare type; they contain 85~\% of the brain's rare-type neurons and 63~\% of the cord's, against 95 and 90~\% when the GNN's candidates are added. Each neuron took the matched type where the matching assigned one and NBLAST's type elsewhere, so no step used the GNN. This GNN-free combination reached 58.9~\% on the brain, 7.6 points below NBLAST alone, and 45.6~\% in the cord. With the GNN's candidates added, the same combination reached 70.6 and 65.1~\%: the GNN contributes 11.7 points on the brain (95~\% interval 11.0–12.4) and 19.5 in the cord (18.2–20.8). A likely reason is that one-to-one matching on a candidate set that lacks many true partners forces wrong pairs, and the GNN supplies the missing neurons.
+\textbf{Is the GNN still needed when morphology is available?} To find out, we ran the matching without stage 1 (exploratory, after the pre-specified analysis). The candidates were only the neurons whose NBLAST match has a rare type; they contain 85~\% of the brain's rare-type neurons and 63~\% of the cord's, against 95 and 90~\% when the GNN's candidates are added. Each neuron took the matched type where the matching assigned one and NBLAST's type elsewhere, so no step used the GNN. Neurons that neither typed, exactly those without an NBLAST hit (7.1~\% of the brain's rare-type neurons, 1.2~\% of the cord's), count as wrong, as they do for NBLAST alone. This GNN-free combination reached 58.9~\% on the brain, 7.6 points below NBLAST alone, and 45.6~\% in the cord. With the GNN's candidates added, the same combination reached 70.6 and 65.1~\%: the GNN contributes 11.7 points on the brain (95~\% interval 11.0–12.4) and 19.5 in the cord (18.2–20.8). Of these, 4.3 and 0.8 points come from the neurons without an NBLAST hit, which the version with the GNN types by stage 1; the rest comes from neurons that NBLAST does match. A likely reason is that one-to-one matching on a candidate set that lacks many true partners forces wrong pairs, and the GNN supplies the missing neurons.
 
 \begin{figure}[tbp]
 \centering
@@ -591,7 +591,7 @@ Combination, broad candidates & 0.68 & 0.59 & \\
 Combination, morphology-augmented candidates & 0.71 & 0.61 & \\
 Combination, NBLAST-only candidates (no GNN) & – & – & \\
 Two-stage, seeded & 0.65 & 0.53 & \\
-Combination, seeded (pre-registered) & 0.69 & 0.51 & \\
+Combination, seeded (pre-specified) & 0.69 & 0.51 & \\
 \bottomrule
 \end{tabularx}
 \end{table}

@@ -29,7 +29,7 @@ On the rare stratum (2–4-neuron source types, reference A), the best combinati
 
 ## Without the GNN: NBLAST-only candidates (exploratory, added 2026-10-29)
 
-Run after the pre-specified seeded-matching analysis (`results/seeded_matching/`), on labels already seen. Candidates are only the neurons whose NBLAST type is a 2-4-neuron source type (`candidates_nblast_only.parquet`, written by `--candidates-out`); the matching is unchanged. "No GNN" takes the matched type where the matching assigned a source neuron, NBLAST's type elsewhere, and no type where neither, so no step uses the GNN. Accuracy %, ref A, 2-4 stratum:
+Run after the pre-specified seeded-matching analysis (`results/seeded_matching/`), on labels already seen. Candidates are only the neurons whose NBLAST type is a 2-4-neuron source type (`candidates_nblast_only.parquet`, written by `--candidates-out`); the matching is unchanged. "No GNN" takes the matched type where the matching assigned a source neuron, NBLAST's type elsewhere, and no type where neither, so no step uses the GNN. Neurons without a type count as wrong; they are exactly the neurons without an NBLAST hit (brain 1,024 of 14,512, 7.1 %; cord 72 of 5,989, 1.2 %), which NBLAST alone also gets wrong. The A2-ii combination types 60.3 % (brain) and 65.3 % (cord) of them by stage 1, which accounts for 4.3 of its 11.7 points over the GNN-free version on the brain and 0.8 of 19.5 in the cord. Accuracy %, ref A, 2-4 stratum:
 
 | | Brain | Cord |
 |---|---|---|

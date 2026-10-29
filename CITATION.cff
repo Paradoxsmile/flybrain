@@ -1,15 +1,16 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below. Please also cite the connectome data (FlyWire / FAFB, MCNS, BANC, hemibrain, MANC) and the cell-type annotations it builds on."
-title: "flybrain: label-free cell typing across fly connectomes from wiring alone"
+title: "flybrain: code and results for 'Typing the rare neurons of an unlabeled connectome by graph matching, guided by a transferred graph neural network'"
 abstract: >-
-  Cell typing of Drosophila connectomes from anonymous wiring, without labels
-  in the target. A directed graph neural network that sees only connectivity
-  types common cell types within FlyWire (FAFB v783) and, with prior matching
-  of type sizes and label-free model selection, transfers to other
-  connectomes (male CNS, BANC, hemibrain). For the rarest types, the
-  transferred GNN selects candidate neurons and graph matching against the
-  reference types them; this was tested under pre-registered protocols on the
-  BANC brain and, from MANC, on the nerve cords of BANC and the male CNS.
+  Code, protocols and result summaries for typing the rare neurons of an
+  unlabeled Drosophila connectome. A graph neural network that sees only
+  anonymous wiring is transferred from an annotated connectome without target
+  labels and selects candidate neurons; graph matching against the reference's
+  rare-type neurons assigns their types. Tested under pre-registered protocols
+  on the BANC brain (rare-type accuracy 22 to 41 %) and, from MANC, on the
+  nerve cords of BANC and the male CNS (40 to 61 % and 72 to 82 %). A
+  pre-specified analysis on BANC compares and combines wiring with automatic
+  morphology matches (NBLAST).
 authors:
   - family-names: Vogt
     given-names: Maximilian
@@ -18,6 +19,16 @@ version: 1.0.0
 date-released: 2026-10-28
 repository-code: "https://github.com/Paradoxsmile/flybrain"
 license: MIT
+preferred-citation:
+  type: article
+  title: "Typing the rare neurons of an unlabeled connectome by graph matching, guided by a transferred graph neural network"
+  authors:
+    - family-names: Vogt
+      given-names: Maximilian
+      orcid: "https://orcid.org/0009-0005-4171-3538"
+  year: 2026
+  notes: "Preprint in preparation; the paper is paper/main.pdf in this repository."
+  url: "https://github.com/Paradoxsmile/flybrain"
 keywords:
   - connectomics
   - Drosophila
