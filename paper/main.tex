@@ -36,7 +36,7 @@
 \url{https://github.com/Paradoxsmile/flybrain}.}\\[0.3em]
 {\small Independent researcher, Ravensburg, Germany}\\
 {\small \href{mailto:max@maximilian-vogt.com}{max@maximilian-vogt.com} \quad ORCID: \href{https://orcid.org/0009-0005-4171-3538}{0009-0005-4171-3538}}}
-\date{October 2026}
+\date{November 2026}
 
 \begin{document}
 \maketitle
@@ -331,6 +331,10 @@ BANC, wiring and morphology (pre-specified; labels seen before) & \texttt{prereg
 \section{Conclusion}
 
 Rare cell types, most of a fly connectome's types, can be typed without any target label by letting a transferred wiring-only GNN select the candidates and graph matching type them. In pre-registered tests the approach roughly doubles accuracy on a held-out brain (22 → 41~\%) and, with broader candidate selection, carries over to two nerve cords from a new source (40 → 61~\% and 72 → 82~\%). Wiring complements morphology: combined with unreviewed automatic morphology matches, it adds little where these matches are good (+2.3 points on BANC's brain, short of the bar we fixed in advance) and a lot where they are weak (+23 points in BANC's cord). Candidate selection is the bottleneck, sparser reconstructions cost accuracy, and partial volumes are out of reach for wiring alone. The approach is most useful for the rare types that a labeling budget reaches last.
+
+\section*{Use of AI tools}
+
+The analysis code, the figures and the text of this manuscript were written with an AI assistant (Claude, Anthropic). The author directed the study, contributed ideas to it and made the design decisions, including the pre-registered protocols, read and checked all results and the full text, and checked the code by running it and inspecting its outputs rather than by line-by-line review. The author takes full responsibility for the content.
 
 \section*{Code and data availability}
 
